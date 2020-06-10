@@ -12,9 +12,9 @@ import (
 )
 
 type promClient struct {
-	pcAPI		v1.API
-	pcCtx		context.Context
-	pcVerbose	bool
+	pcAPI     v1.API
+	pcCtx     context.Context
+	pcVerbose bool
 }
 
 func promTargets(client *promClient, job *string) {
@@ -24,10 +24,10 @@ func promTargets(client *promClient, job *string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Active targets:\n");
+	fmt.Printf("Active targets:\n")
 	for _, target := range result.Active {
 		if *job != "" && *job != string(target.Labels["job"]) {
-			continue;
+			continue
 		}
 		fmt.Printf("Scrape URL: %s\n", target.ScrapeURL)
 		fmt.Printf("Job: %s\n", target.Labels["job"])
@@ -42,10 +42,10 @@ func promTargets(client *promClient, job *string) {
 		fmt.Printf("\n")
 	}
 
-	fmt.Printf("Dropped targets:\n");
+	fmt.Printf("Dropped targets:\n")
 	for _, target := range result.Dropped {
 		if *job != "" && *job != target.DiscoveredLabels["job"] {
-			continue;
+			continue
 		}
 		fmt.Printf("Job: %s\n", target.DiscoveredLabels["job"])
 		if client.pcVerbose {
@@ -57,16 +57,32 @@ func promTargets(client *promClient, job *string) {
 	}
 }
 
+func promAlerts(client *promClient) {
+	result, err := client.pcAPI.Alerts(client.pcCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error retrieving list of alerts: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("\n")
+	for _, alert := range result.Alerts {
+		fmt.Printf("alert: %s\n", alert.Labels["alertname"])
+		fmt.Printf("message: %s\n", alert.Annotations["message"])
+		fmt.Printf("severity: %s\n", alert.Labels["severity"])
+		fmt.Printf("\n")
+	}
+}
+
 func main() {
-	var client promClient;
+	var client promClient
 	var promURL, cmd, job *string
 	var verbose *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	cmd = flag.String("command", "", "<targets>")
+	cmd = flag.String("command", "", "<targets|range>")
 	job = flag.String("job", "", "show only targets from specified job")
-    verbose = flag.Bool("verbose", false, "enable verbose mode")
+	verbose = flag.Bool("verbose", false, "enable verbose mode")
 	flag.Parse()
 
 	if *promURL == "" {
@@ -88,15 +104,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	client.pcVerbose = *verbose;
+	client.pcVerbose = *verbose
 	client.pcAPI = v1.NewAPI(apiclient)
 	client.pcCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 
 	switch *cmd {
+	case "alerts":
+		promAlerts(&client)
 	case "targets":
 		promTargets(&client, job)
 	default:
-		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", cmd)
+		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
 		os.Exit(2)
 	}
 
