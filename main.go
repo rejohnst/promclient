@@ -17,7 +17,7 @@ type promClient struct {
 	pcVerbose bool
 }
 
-func promTargets(client *promClient, job *string) {
+func promTargets(client *promClient, job *string, active bool) {
 	result, err := client.pcAPI.Targets(client.pcCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
@@ -40,6 +40,10 @@ func promTargets(client *promClient, job *string) {
 			}
 		}
 		fmt.Printf("\n")
+	}
+
+	if active {
+		return
 	}
 
 	fmt.Printf("Dropped targets:\n")
@@ -76,12 +80,13 @@ func promAlerts(client *promClient) {
 func main() {
 	var client promClient
 	var promURL, cmd, job *string
-	var verbose *bool
+	var verbose, active *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	cmd = flag.String("command", "", "<targets|range>")
+	cmd = flag.String("command", "", "<targets|alerts>")
 	job = flag.String("job", "", "show only targets from specified job")
+	active = flag.Bool("active", false, "only display active targets")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
 	flag.Parse()
 
@@ -112,7 +117,7 @@ func main() {
 	case "alerts":
 		promAlerts(&client)
 	case "targets":
-		promTargets(&client, job)
+		promTargets(&client, job, *active)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
 		os.Exit(2)
