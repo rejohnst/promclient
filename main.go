@@ -17,26 +17,37 @@ type promClient struct {
 	pcVerbose bool
 }
 
-func promTargets(client *promClient, job *string, active bool) {
+func promTargets(client *promClient, job *string, active bool, down bool) {
 	result, err := client.pcAPI.Targets(client.pcCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("Active targets:\n")
+	fmt.Printf("Active targets\n")
+	fmt.Printf("==============\n")
 	for _, target := range result.Active {
+
 		if *job != "" && *job != string(target.Labels["job"]) {
 			continue
 		}
-		fmt.Printf("Scrape URL: %s\n", target.ScrapeURL)
-		fmt.Printf("Job: %s\n", target.Labels["job"])
-		if target.Labels["pod"] != "" {
-			fmt.Printf("Pod: %s\n", target.Labels["pod"])
+		if down && target.Health != v1.HealthBad {
+			continue
 		}
+
+		fmt.Printf("%-20s %s\n", "Scrape URL:", target.ScrapeURL)
+		fmt.Printf("%-20s %s\n", "Jobs:", target.Labels["job"])
+		if target.Labels["pod"] != "" {
+			fmt.Printf("%-20s %s\n", "Pod:", target.Labels["pod"])
+		}
+		fmt.Printf("%-20s %s\n", "State:", target.Health)
+		if target.Health == v1.HealthBad {
+			fmt.Printf("%-20s %s\n", "Error:", target.LastError)
+		}
+
 		if client.pcVerbose {
 			for k, v := range target.DiscoveredLabels {
-				fmt.Printf("%s: %s\n", k, v)
+				fmt.Printf("%-20s %s\n", k, v)
 			}
 		}
 		fmt.Printf("\n")
@@ -80,13 +91,14 @@ func promAlerts(client *promClient) {
 func main() {
 	var client promClient
 	var promURL, cmd, job *string
-	var verbose, active *bool
+	var verbose, active, down *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
 	cmd = flag.String("command", "", "<targets|alerts>")
 	job = flag.String("job", "", "show only targets from specified job")
 	active = flag.Bool("active", false, "only display active targets")
+	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
 	flag.Parse()
 
@@ -100,7 +112,9 @@ func main() {
 		flag.Usage()
 		os.Exit(2)
 	}
-
+	if *down {
+		*active = true
+	}
 	apiclient, err := api.NewClient(api.Config{
 		Address: *promURL,
 	})
@@ -117,7 +131,7 @@ func main() {
 	case "alerts":
 		promAlerts(&client)
 	case "targets":
-		promTargets(&client, job, *active)
+		promTargets(&client, job, *active, *down)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
 		os.Exit(2)
