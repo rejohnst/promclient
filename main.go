@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/api"
@@ -17,7 +18,7 @@ type promClient struct {
 	pcVerbose bool
 }
 
-func promTargets(client *promClient, job *string, active bool, down bool) {
+func promTargets(client *promClient, job string, active bool, down bool) {
 	result, err := client.pcAPI.Targets(client.pcCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
@@ -28,7 +29,7 @@ func promTargets(client *promClient, job *string, active bool, down bool) {
 	fmt.Printf("==============\n")
 	for _, target := range result.Active {
 
-		if *job != "" && *job != string(target.Labels["job"]) {
+		if job != "" && job != string(target.Labels["job"]) {
 			continue
 		}
 		if down && target.Health != v1.HealthBad {
@@ -36,6 +37,7 @@ func promTargets(client *promClient, job *string, active bool, down bool) {
 		}
 
 		fmt.Printf("%-20s %s\n", "Scrape URL:", target.ScrapeURL)
+		fmt.Printf("%-20s %s\n", "Last Scrape:", target.LastScrape.Local().String())
 		fmt.Printf("%-20s %s\n", "Jobs:", target.Labels["job"])
 		if target.Labels["pod"] != "" {
 			fmt.Printf("%-20s %s\n", "Pod:", target.Labels["pod"])
@@ -59,7 +61,7 @@ func promTargets(client *promClient, job *string, active bool, down bool) {
 
 	fmt.Printf("Dropped targets:\n")
 	for _, target := range result.Dropped {
-		if *job != "" && *job != target.DiscoveredLabels["job"] {
+		if job != "" && job != target.DiscoveredLabels["job"] {
 			continue
 		}
 		fmt.Printf("Job: %s\n", target.DiscoveredLabels["job"])
@@ -88,18 +90,80 @@ func promAlerts(client *promClient) {
 	}
 }
 
+func seqSearch(key string, arr []string) bool {
+	for _, val := range arr {
+		if val == key {
+			return true
+		}
+	}
+	return false
+}
+
+func promMetrics(client *promClient, job string, csv bool) {
+	var jobs []string
+
+	if job != "" {
+		jobs = append(jobs, job)
+	} else {
+		result, err := client.pcAPI.Targets(client.pcCtx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
+			os.Exit(1)
+		}
+
+		for _, target := range result.Active {
+			// Don't add if the target is down
+			if target.Health == v1.HealthBad {
+				continue
+			}
+
+			// Don't add if we've already added this job to the array
+			job := string(target.Labels["job"])
+			if seqSearch(job, jobs) {
+				continue
+			}
+
+			jobs = append(jobs, job)
+		}
+	}
+
+	for _, j := range jobs {
+		match := fmt.Sprintf("{job=\"%s\"}", j)
+		metrics, err := client.pcAPI.TargetsMetadata(client.pcCtx, match, "", "")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error retrieving metric metadata for %s: %v\n", j, err)
+			os.Exit(1)
+		}
+		for _, metric := range metrics {
+			if csv {
+				// Since we're outputting a CSV file, we need to replace any
+				// comma chars in the help string with something else
+				help := strings.ReplaceAll(metric.Help, ",", ";")
+				fmt.Printf("%s,%s,%s,%s\n", j, metric.Metric, help, metric.Type)
+			} else {
+				fmt.Printf("%-20s %s\n", "Job:", j)
+				fmt.Printf("%-20s %s\n", "Metric Name:", metric.Metric)
+				fmt.Printf("%-20s %s\n", "Metric Help:", metric.Help)
+				fmt.Printf("%-20s %s\n", "Metric Type:", metric.Type)
+				fmt.Printf("\n")
+			}
+		}
+	}
+}
+
 func main() {
 	var client promClient
 	var promURL, cmd, job *string
-	var verbose, active, down *bool
+	var verbose, active, down, csv *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	cmd = flag.String("command", "", "<targets|alerts>")
-	job = flag.String("job", "", "show only targets from specified job")
+	cmd = flag.String("command", "", "<targets|alerts|metrics>")
+	job = flag.String("job", "", "show only targets/metrics from specified job")
 	active = flag.Bool("active", false, "only display active targets")
 	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
+	csv = flag.Bool("csv", false, "output metric metadata as CSV")
 	flag.Parse()
 
 	if *promURL == "" {
@@ -130,8 +194,10 @@ func main() {
 	switch *cmd {
 	case "alerts":
 		promAlerts(&client)
+	case "metrics":
+		promMetrics(&client, *job, *csv)
 	case "targets":
-		promTargets(&client, job, *active, *down)
+		promTargets(&client, *job, *active, *down)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
 		os.Exit(2)
