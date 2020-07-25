@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 )
 
 type promClient struct {
@@ -18,6 +19,16 @@ type promClient struct {
 	pcVerbose bool
 }
 
+//
+// Dump information on Prometheus targets
+//
+// args:
+// job: only print information on targets associated with the specified job
+// active: if true, only output information for active targets
+// down: if true, only output infromation for active targets who's state is "down"
+//
+// returns: void
+//
 func promTargets(client *promClient, job string, active bool, down bool) {
 	result, err := client.pcAPI.Targets(client.pcCtx)
 	if err != nil {
@@ -74,6 +85,11 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 	}
 }
 
+//
+// Dump all active alerts
+//
+// returns: void
+//
 func promAlerts(client *promClient) {
 	result, err := client.pcAPI.Alerts(client.pcCtx)
 	if err != nil {
@@ -99,6 +115,15 @@ func seqSearch(key string, arr []string) bool {
 	return false
 }
 
+//
+// Dump Prometheus' metric metadata
+//
+// args:
+// job: only print metric metadata associated with the specified job
+// csv: if true, output metric metadata in CSV format
+//
+// returns: void
+//
 func promMetrics(client *promClient, job string, csv bool) {
 	var jobs []string
 
@@ -151,15 +176,55 @@ func promMetrics(client *promClient, job string, csv bool) {
 	}
 }
 
+//
+// Perform an instant query and print the results
+//
+// args:
+// query: PromQL query string
+//
+// returns: void
+//
+func promQuery(client *promClient, query string) {
+	ts := time.Now()
+	val, _, err := client.pcAPI.Query(client.pcCtx, query, ts)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "query failed: %v\n", err)
+		os.Exit(1)
+	}
+	switch {
+	case val.Type() == model.ValScalar:
+		scalar := val.(*model.Scalar)
+		fmt.Printf("value: %v\n", scalar)
+	case val.Type() == model.ValVector:
+		vec := val.(model.Vector)
+		for _, elem := range vec {
+			fmt.Printf("value: %v\n", elem)
+		}
+	case val.Type() == model.ValMatrix:
+		// Prometheus uses matrix values for range queries.  This is an
+		// instant query so we shouldn't get here.
+		fmt.Printf("Unexpectedly got matrix value back\n")
+		os.Exit(1)
+	case val.Type() == model.ValString:
+		str := val.(*model.String)
+		fmt.Printf("value: %v\n", str)
+	default:
+		// Shouldn't happen
+		fmt.Printf("Unexpected model type \n")
+		os.Exit(1)
+	}
+}
+
 func main() {
 	var client promClient
-	var promURL, cmd, job *string
+	var promURL, cmd, job, query *string
 	var verbose, active, down, csv *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
 	cmd = flag.String("command", "", "<targets|alerts|metrics>")
 	job = flag.String("job", "", "show only targets/metrics from specified job")
+	query = flag.String("query", "", "PromQL query string")
 	active = flag.Bool("active", false, "only display active targets")
 	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
@@ -196,6 +261,12 @@ func main() {
 		promAlerts(&client)
 	case "metrics":
 		promMetrics(&client, *job, *csv)
+	case "query":
+		if *query == "" {
+			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
+			os.Exit(2);
+		}
+		promQuery(&client, *query)
 	case "targets":
 		promTargets(&client, *job, *active, *down)
 	default:
