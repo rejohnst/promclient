@@ -3,9 +3,9 @@ CLI for Prometheus API
 
 ## Example Usages
 
-### Perform an instant query
+### Perform an query
 
-```promclient -promurl=<Prometheus URL> -command=query -query="<PromQL query>"```
+```promclient -promurl=<Prometheus URL> -command=query -query="<PromQL query>" [-len=<duration>] [-step=<duration>]```
 
 ### Print info on all Prometheus targets
 

@@ -10,13 +10,19 @@ import (
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/model"
+
+	str2duration "github.com/xhit/go-str2duration"
 )
 
 type promClient struct {
 	pcAPI     v1.API
 	pcCtx     context.Context
 	pcVerbose bool
+}
+
+type promQuery struct {
+	pqQuery		string
+	pqRange		v1.Range
 }
 
 //
@@ -184,40 +190,46 @@ func promMetrics(client *promClient, job string, csv bool) {
 //
 // returns: void
 //
-func promQuery(client *promClient, query string) {
+func promInstantQuery(client *promClient, query string) {
 	ts := time.Now()
-	val, _, err := client.pcAPI.Query(client.pcCtx, query, ts)
+	val, warnings, err := client.pcAPI.Query(client.pcCtx, query, ts)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "query failed: %v\n", err)
 		os.Exit(1)
 	}
-	switch {
-	case val.Type() == model.ValScalar:
-		scalar := val.(*model.Scalar)
-		fmt.Printf("value: %v\n", scalar)
-	case val.Type() == model.ValVector:
-		vec := val.(model.Vector)
-		for _, elem := range vec {
-			fmt.Printf("value: %v\n", elem)
-		}
-	case val.Type() == model.ValMatrix:
-		// Prometheus uses matrix values for range queries.  This is an
-		// instant query so we shouldn't get here.
-		fmt.Printf("Unexpectedly got matrix value back\n")
-		os.Exit(1)
-	case val.Type() == model.ValString:
-		str := val.(*model.String)
-		fmt.Printf("value: %v\n", str)
-	default:
-		// Shouldn't happen
-		fmt.Printf("Unexpected model type \n")
+	if len(warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "warnings: %v\n", warnings)
+	}
+	fmt.Printf("%v\n", val)
+}
+
+//
+// Perform a range query and print the results
+//
+// args:
+// pq:	pointer to promQuery struct
+//
+// returns: void
+//
+func promRangeQuery(client *promClient, pq *promQuery) {
+	result, warnings, err := client.pcAPI.QueryRange(client.pcCtx, pq.pqQuery, pq.pqRange)
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "query failed: %v\n", err)
 		os.Exit(1)
 	}
+	if len(warnings) > 0 {
+		fmt.Fprintf(os.Stderr, "warnings: %v\n", warnings)
+	}
+	fmt.Printf("%v\n", result)
 }
+
 
 func main() {
 	var client promClient
-	var promURL, cmd, job, query *string
+	var pq promQuery
+	var promURL, cmd, job, query, len, step *string
 	var verbose, active, down, csv *bool
 	var cancel context.CancelFunc
 
@@ -225,6 +237,8 @@ func main() {
 	cmd = flag.String("command", "", "<targets|alerts|metrics>")
 	job = flag.String("job", "", "show only targets/metrics from specified job")
 	query = flag.String("query", "", "PromQL query string")
+	len = flag.String("len", "", "Legnth of query range")
+	step = flag.String("step", "1m", "Range resolution")
 	active = flag.Bool("active", false, "only display active targets")
 	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
@@ -266,7 +280,31 @@ func main() {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
 			os.Exit(2);
 		}
-		promQuery(&client, *query)
+		// If the len option was specifiec, we'll do a range query.  Otherwise,
+		// we'll do an instant query
+		if *len != "" {
+			lenDur, err := str2duration.Str2Duration(*len)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to parse len: %s\n", *len)
+				os.Exit(1)
+			}
+			stepDur, err := str2duration.Str2Duration(*step)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to parse step: %s\n", *len)
+				os.Exit(1)
+			}
+
+			pq.pqQuery = *query
+			pq.pqRange = v1.Range{
+				Start: time.Now().Add(-lenDur),
+				End: time.Now(),
+				Step: stepDur,
+			}
+
+			promRangeQuery(&client, &pq)
+		} else {
+			promInstantQuery(&client, *query)
+		}
 	case "targets":
 		promTargets(&client, *job, *active, *down)
 	default:
