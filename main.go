@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 
 	str2duration "github.com/xhit/go-str2duration"
 )
@@ -20,7 +21,7 @@ type promClient struct {
 	pcVerbose bool
 }
 
-type promQuery struct {
+type promQueryParams struct {
 	pqQuery		string
 	pqRange		v1.Range
 }
@@ -183,37 +184,27 @@ func promMetrics(client *promClient, job string, csv bool) {
 }
 
 //
-// Perform an instant query and print the results
+// Perform a PromQL query and print the results
 //
 // args:
-// query: PromQL query string
+// pq:	  pointer to promQueryParam struct
+// timed: if true, print wallclock time elapsed during query
 //
 // returns: void
 //
-func promInstantQuery(client *promClient, query string) {
-	ts := time.Now()
-	val, warnings, err := client.pcAPI.Query(client.pcCtx, query, ts)
+func promQuery(client *promClient, pq *promQueryParams, timed bool) {
+	var result model.Value
+	var warnings v1.Warnings
+	var err error
+	var t1, t2 time.Time
 
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "query failed: %v\n", err)
-		os.Exit(1)
+	t1 = time.Now()
+	if (v1.Range{}) == pq.pqRange {
+		result, warnings, err = client.pcAPI.Query(client.pcCtx, pq.pqQuery, time.Now())
+	} else {
+		result, warnings, err = client.pcAPI.QueryRange(client.pcCtx, pq.pqQuery, pq.pqRange)
 	}
-	if len(warnings) > 0 {
-		fmt.Fprintf(os.Stderr, "warnings: %v\n", warnings)
-	}
-	fmt.Printf("%v\n", val)
-}
-
-//
-// Perform a range query and print the results
-//
-// args:
-// pq:	pointer to promQuery struct
-//
-// returns: void
-//
-func promRangeQuery(client *promClient, pq *promQuery) {
-	result, warnings, err := client.pcAPI.QueryRange(client.pcCtx, pq.pqQuery, pq.pqRange)
+	t2 = time.Now()
 
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "query failed: %v\n", err)
@@ -223,14 +214,20 @@ func promRangeQuery(client *promClient, pq *promQuery) {
 		fmt.Fprintf(os.Stderr, "warnings: %v\n", warnings)
 	}
 	fmt.Printf("%v\n", result)
+
+	if timed {
+		elapsed := t2.Sub(t1)
+		// time.Format is weird - see https://golang.org/pkg/time/#Time.Format
+		fmt.Printf("query time: %s\n", time.Time{}.Add(elapsed).Format("04:05"))
+	}
 }
 
 
 func main() {
 	var client promClient
-	var pq promQuery
+	var pq promQueryParams
 	var promURL, cmd, job, query, len, step *string
-	var verbose, active, down, csv *bool
+	var verbose, active, down, csv, timed *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
@@ -239,6 +236,7 @@ func main() {
 	query = flag.String("query", "", "PromQL query string")
 	len = flag.String("len", "", "Legnth of query range")
 	step = flag.String("step", "1m", "Range resolution")
+	timed = flag.Bool("timed", false, "Show query time")
 	active = flag.Bool("active", false, "only display active targets")
 	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
@@ -280,6 +278,8 @@ func main() {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
 			os.Exit(2);
 		}
+		pq.pqQuery = *query
+
 		// If the len option was specifiec, we'll do a range query.  Otherwise,
 		// we'll do an instant query
 		if *len != "" {
@@ -294,17 +294,13 @@ func main() {
 				os.Exit(1)
 			}
 
-			pq.pqQuery = *query
 			pq.pqRange = v1.Range{
 				Start: time.Now().Add(-lenDur),
 				End: time.Now(),
 				Step: stepDur,
 			}
-
-			promRangeQuery(&client, &pq)
-		} else {
-			promInstantQuery(&client, *query)
 		}
+		promQuery(&client, &pq, *timed)
 	case "targets":
 		promTargets(&client, *job, *active, *down)
 	default:
