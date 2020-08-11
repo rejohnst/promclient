@@ -15,18 +15,18 @@ import (
 	str2duration "github.com/xhit/go-str2duration"
 )
 
-const pcVersion="2020-08-04"
+const pcVersion = "2020-08-04"
 
 type promClient struct {
-	pcAPI		v1.API
-	pcCtx		context.Context
-	pcVerbose	bool
-	pcCount		bool
+	pcAPI     v1.API
+	pcCtx     context.Context
+	pcVerbose bool
+	pcCount   bool
 }
 
 type promQueryParams struct {
-	pqQuery		string
-	pqRange		v1.Range
+	pqQuery string
+	pqRange v1.Range
 }
 
 //
@@ -48,7 +48,7 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 		os.Exit(1)
 	}
 
-	if !down  && !client.pcCount {
+	if !down && !client.pcCount {
 		fmt.Printf("Active targets\n")
 		fmt.Printf("==============\n")
 	}
@@ -241,7 +241,33 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 	if len(warnings) > 0 {
 		fmt.Fprintf(os.Stderr, "warnings: %v\n", warnings)
 	}
-	fmt.Printf("%v\n", result)
+
+	//
+	// result will contain a model.Value, which is a generic interface, so we
+	// use a type switch to process it.  Instant queries should return type
+	// model.Vector and range queries should return type model.Matrix.
+	//
+	switch {
+	case result.Type() == model.ValVector:
+		samples := result.(model.Vector)
+		for _, sample := range samples {
+			fmt.Printf("%s = %v @[%s]\n", sample.Metric.String(), sample.Value,
+				sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"))
+		}
+	case result.Type() == model.ValMatrix:
+		streams := result.(model.Matrix)
+		for _, stream := range streams {
+			fmt.Printf("%s = \n", stream.Metric.String())
+			for _, val := range stream.Values {
+				fmt.Printf("\t%v @[%s]\n", val.Value,
+					val.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"))
+			}
+		}
+	case result.Type() == model.ValScalar:
+		fmt.Printf("got a scalar value\n")
+	case result.Type() == model.ValString:
+		fmt.Printf("got a string value\n")
+	}
 
 	if timed {
 		elapsed := t2.Sub(t1)
@@ -250,11 +276,10 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 	}
 }
 
-
 func main() {
 	var client promClient
 	var pq promQueryParams
-	var promURL, cmd, job, query, len, step  *string
+	var promURL, cmd, job, query, len, step *string
 	var verbose, active, down, csv, timed, count, version *bool
 	var cancel context.CancelFunc
 
@@ -312,7 +337,7 @@ func main() {
 	case "query":
 		if *query == "" {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
-			os.Exit(2);
+			os.Exit(2)
 		}
 		pq.pqQuery = *query
 
@@ -332,8 +357,8 @@ func main() {
 
 			pq.pqRange = v1.Range{
 				Start: time.Now().Add(-lenDur),
-				End: time.Now(),
-				Step: stepDur,
+				End:   time.Now(),
+				Step:  stepDur,
 			}
 		}
 		promQuery(&client, &pq, *timed)
