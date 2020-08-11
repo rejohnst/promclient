@@ -15,7 +15,7 @@ import (
 	str2duration "github.com/xhit/go-str2duration"
 )
 
-const pcVersion = "2020-08-04"
+const pcVersion = "2020-08-11"
 
 type promClient struct {
 	pcAPI     v1.API
@@ -264,9 +264,9 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 			}
 		}
 	case result.Type() == model.ValScalar:
-		fmt.Printf("got a scalar value\n")
+		fmt.Printf("%v\n", result)
 	case result.Type() == model.ValString:
-		fmt.Printf("got a string value\n")
+		fmt.Printf("%v\n", result)
 	}
 
 	if timed {
