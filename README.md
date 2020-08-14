@@ -23,6 +23,10 @@ CLI for Prometheus API
 
 ```promclient -promurl=<Prometheus URL> -command=alerts```
 
+### Show only critical active Prometheus alerts
+
+```promclient -promurl=<Prometheus URL> -command=alerts -critical```
+
 ### Print metadata on all available metrics
 
 ```promclient -promurl=<Prometheus URL> -command=metrics```

@@ -15,13 +15,14 @@ import (
 	str2duration "github.com/xhit/go-str2duration"
 )
 
-const pcVersion = "2020-08-11"
+const pcVersion = "2020-08-14"
 
 type promClient struct {
 	pcAPI     v1.API
 	pcCtx     context.Context
 	pcVerbose bool
 	pcCount   bool
+	pcCSV     bool
 }
 
 type promQueryParams struct {
@@ -110,9 +111,12 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 //
 // Dump all active alerts
 //
+// args:
+// critical: if true, only print alerts with critical severity
+//
 // returns: void
 //
-func promAlerts(client *promClient) {
+func promAlerts(client *promClient, critical bool) {
 	result, err := client.pcAPI.Alerts(client.pcCtx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of alerts: %v\n", err)
@@ -125,6 +129,9 @@ func promAlerts(client *promClient) {
 	}
 	fmt.Printf("\n")
 	for _, alert := range result.Alerts {
+		if critical && alert.Labels["severity"] != "critical" {
+			continue
+		}
 		fmt.Printf("alert: %s\n", alert.Labels["alertname"])
 		fmt.Printf("message: %s\n", alert.Annotations["message"])
 		fmt.Printf("severity: %s\n", alert.Labels["severity"])
@@ -146,11 +153,14 @@ func seqSearch(key string, arr []string) bool {
 //
 // args:
 // job: only print metric metadata associated with the specified job
-// csv: if true, output metric metadata in CSV format
+//
+// If the -csv CLI option was set then output metric metadata in CSV format:
+//
+// <job>,<metric-name>,<metric-help>,<metric-type>
 //
 // returns: void
 //
-func promMetrics(client *promClient, job string, csv bool) {
+func promMetrics(client *promClient, job string) {
 	var jobs []string
 	var count int32
 
@@ -192,7 +202,7 @@ func promMetrics(client *promClient, job string, csv bool) {
 				continue
 			}
 
-			if csv {
+			if client.pcCSV {
 				// Since we're outputting a CSV file, we need to replace any
 				// comma chars in the help string with something else
 				help := strings.ReplaceAll(metric.Help, ",", ";")
@@ -280,7 +290,7 @@ func main() {
 	var client promClient
 	var pq promQueryParams
 	var promURL, cmd, job, query, len, step *string
-	var verbose, active, down, csv, timed, count, version *bool
+	var verbose, active, down, csv, timed, count, version, critical *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
@@ -296,6 +306,7 @@ func main() {
 	count = flag.Bool("count", false, "only display a count of the requested items")
 	verbose = flag.Bool("verbose", false, "enable verbose mode")
 	csv = flag.Bool("csv", false, "output metric metadata as CSV")
+	critical = flag.Bool("critical", false, "only show critical alerts")
 	flag.Parse()
 
 	if *version {
@@ -326,14 +337,15 @@ func main() {
 
 	client.pcVerbose = *verbose
 	client.pcCount = *count
+	client.pcCSV = *csv
 	client.pcAPI = v1.NewAPI(apiclient)
 	client.pcCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 
 	switch *cmd {
 	case "alerts":
-		promAlerts(&client)
+		promAlerts(&client, *critical)
 	case "metrics":
-		promMetrics(&client, *job, *csv)
+		promMetrics(&client, *job)
 	case "query":
 		if *query == "" {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
