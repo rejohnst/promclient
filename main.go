@@ -15,7 +15,10 @@ import (
 	str2duration "github.com/xhit/go-str2duration"
 )
 
-const pcVersion = "2020-08-14"
+var (
+	BuildTime   string
+	GitRevision string
+)
 
 type promClient struct {
 	pcAPI     v1.API
@@ -310,7 +313,8 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("%s\n", pcVersion)
+		fmt.Printf("Git Revision: %s\n", GitRevision)
+		fmt.Printf("Build Time:   %s\n", BuildTime)
 		os.Exit(0)
 	}
 
