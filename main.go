@@ -289,6 +289,15 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 	}
 }
 
+func usage() {
+	fmt.Printf("promurl -version\n")
+	fmt.Printf("promurl -promurl=<arg> -command=<targets> [-active|-down] [-verbose]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=<alerts> [-critical]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=<metrics> [-job=<arg>] [-count] [-csv]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=<query> -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
+	flag.Usage()
+}
+
 func main() {
 	var client promClient
 	var pq promQueryParams
@@ -297,11 +306,11 @@ func main() {
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	cmd = flag.String("command", "", "<targets|alerts|metrics>")
+	cmd = flag.String("command", "", "<targets|alerts|metrics|query>")
 	job = flag.String("job", "", "show only targets/metrics from specified job")
 	query = flag.String("query", "", "PromQL query string")
 	version = flag.Bool("version", false, "Output program version and exit")
-	len = flag.String("len", "", "Legnth of query range")
+	len = flag.String("len", "", "Length of query range")
 	step = flag.String("step", "1m", "Range resolution")
 	timed = flag.Bool("timed", false, "Show query time")
 	active = flag.Bool("active", false, "only display active targets")
@@ -320,12 +329,12 @@ func main() {
 
 	if *promURL == "" {
 		fmt.Fprintf(os.Stderr, "-promurl is a required argument\n\n")
-		flag.Usage()
+		usage()
 		os.Exit(2)
 	}
 	if *cmd == "" {
 		fmt.Fprintf(os.Stderr, "-command is a required argument\n\n")
-		flag.Usage()
+		usage()
 		os.Exit(2)
 	}
 	if *down {
