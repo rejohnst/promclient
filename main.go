@@ -33,6 +33,11 @@ type promQueryParams struct {
 	pqRange v1.Range
 }
 
+type promAlert struct {
+	paSeverity string
+	paDescs    []string
+}
+
 //
 // Dump information on Prometheus targets
 //
@@ -121,6 +126,8 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 //
 func promAlerts(client *promClient, critical bool) {
 	result, err := client.pcAPI.Alerts(client.pcCtx)
+	alerts := make(map[string]*promAlert)
+
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of alerts: %v\n", err)
 		os.Exit(1)
@@ -130,14 +137,32 @@ func promAlerts(client *promClient, critical bool) {
 		fmt.Printf("%d\n", len(result.Alerts))
 		return
 	}
+
 	fmt.Printf("\n")
 	for _, alert := range result.Alerts {
+		if alert.Labels["alertname"] == "Watchdog" {
+			continue
+		}
 		if critical && alert.Labels["severity"] != "critical" {
 			continue
 		}
-		fmt.Printf("alert: %s\n", alert.Labels["alertname"])
-		fmt.Printf("message: %s\n", alert.Annotations["message"])
-		fmt.Printf("severity: %s\n", alert.Labels["severity"])
+		key := string(alert.Labels["alertname"])
+		val, ok := alerts[key]
+		if !ok {
+			var newAlert promAlert
+			newAlert.paSeverity = string(alert.Labels["severity"])
+			newAlert.paDescs = append(newAlert.paDescs, string(alert.Annotations["message"]))
+			alerts[key] = &newAlert
+		} else {
+			val.paDescs = append(alerts[key].paDescs, string(alert.Annotations["message"]))
+		}
+	}
+	for k, v := range alerts {
+		fmt.Printf("alert: %s\n", k)
+		fmt.Printf("severity: %s\n", v.paSeverity)
+		for i := range v.paDescs {
+			fmt.Printf("  %s\n", v.paDescs[i])
+		}
 		fmt.Printf("\n")
 	}
 }
