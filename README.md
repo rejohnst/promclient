@@ -3,6 +3,10 @@ CLI for Prometheus API
 
 ## Example Usages
 
+### Get Prometheus' Runtime Info
+
+```promclient -promurl=<Prometheus URL> -command=runtime```
+
 ### Perform an query
 
 ```promclient -promurl=<Prometheus URL> -command=query -query="<PromQL query>" [-len=<duration>] [-step=<duration>]```
