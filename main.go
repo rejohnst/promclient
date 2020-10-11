@@ -16,8 +16,8 @@ import (
 )
 
 var (
-	BuildTime   string
-	GitRevision string
+	buildTime   string
+	gitRevision string
 )
 
 type promClient struct {
@@ -289,16 +289,18 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 	case result.Type() == model.ValVector:
 		samples := result.(model.Vector)
 		for _, sample := range samples {
-			fmt.Printf("%s = %v @[%s]\n", sample.Metric.String(), sample.Value,
-				sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"))
+			fmt.Printf("[%s] %s = %v\n",
+				sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
+				sample.Metric.String(), sample.Value)
 		}
 	case result.Type() == model.ValMatrix:
 		streams := result.(model.Matrix)
 		for _, stream := range streams {
 			fmt.Printf("%s = \n", stream.Metric.String())
 			for _, val := range stream.Values {
-				fmt.Printf("\t%v @[%s]\n", val.Value,
-					val.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"))
+				fmt.Printf("\t[%s] %v\n",
+					val.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
+					val.Value)
 			}
 		}
 	case result.Type() == model.ValScalar:
@@ -314,12 +316,32 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 	}
 }
 
+func promRuntime(client *promClient) {
+	result, err := client.pcAPI.Runtimeinfo(client.pcCtx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error retrieving Primetheus runtime info: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("%-30s %s\n", "CWD:", result.CWD)
+	fmt.Printf("%-30s %v\n", "Last Cfg Reload Successful?:", result.ReloadConfigSuccess)
+	fmt.Printf("%-30s %v\n", "Last Cfg Time:", result.LastConfigTime)
+	fmt.Printf("%-30s %d\n", "# of Chunks", result.ChunkCount)
+	fmt.Printf("%-30s %d\n", "# of Time Series", result.TimeSeriesCount)
+	fmt.Printf("%-30s %d\n", "# of Corruptions", result.CorruptionCount)
+	fmt.Printf("%-30s %d\n", "# of Go Routines", result.GoroutineCount)
+	fmt.Printf("%-30s %d\n", "GOMAXPROCS", result.GOMAXPROCS)
+	fmt.Printf("%-30s %s\n", "GOGC", result.GOGC)
+	fmt.Printf("%-30s %s\n", "GODEBUG", result.GODEBUG)
+	fmt.Printf("%-30s %s\n", "Data Retention", result.StorageRetention)
+}
+
 func usage() {
 	fmt.Printf("promurl -version\n")
-	fmt.Printf("promurl -promurl=<arg> -command=<targets> [-active|-down] [-verbose]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=<alerts> [-critical]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=<metrics> [-job=<arg>] [-count] [-csv]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=<query> -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
+	fmt.Printf("promurl -promurl=<arg> -command=runtime\n")
+	fmt.Printf("promurl -promurl=<arg> -command=targets [-active|-down] [-verbose]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=alerts [-critical]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=metrics [-job=<arg>] [-count] [-csv]\n")
+	fmt.Printf("promurl -promurl=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
 	flag.Usage()
 }
 
@@ -347,8 +369,8 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Printf("Git Revision: %s\n", GitRevision)
-		fmt.Printf("Build Time:   %s\n", BuildTime)
+		fmt.Printf("Git Revision: %s\n", gitRevision)
+		fmt.Printf("Build Time:   %s\n", buildTime)
 		os.Exit(0)
 	}
 
@@ -412,6 +434,8 @@ func main() {
 			}
 		}
 		promQuery(&client, &pq, *timed)
+	case "runtime":
+		promRuntime(&client)
 	case "targets":
 		promTargets(&client, *job, *active, *down)
 	default:
