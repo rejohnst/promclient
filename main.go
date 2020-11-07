@@ -337,23 +337,24 @@ func promRuntime(client *promClient) {
 
 func usage() {
 	fmt.Printf("promurl -version\n")
-	fmt.Printf("promurl -promurl=<arg> -command=runtime\n")
-	fmt.Printf("promurl -promurl=<arg> -command=targets [-active|-down] [-verbose]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=alerts [-critical]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=metrics [-job=<arg>] [-count] [-csv]\n")
-	fmt.Printf("promurl -promurl=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
 	flag.Usage()
 }
 
 func main() {
 	var client promClient
 	var pq promQueryParams
-	var promURL, cmd, job, query, len, step *string
+	var promURL, promIP, cmd, job, query, len, step *string
 	var verbose, active, down, csv, timed, count, version, critical *bool
 	var cancel context.CancelFunc
 
 	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	cmd = flag.String("command", "", "<targets|alerts|metrics|query>")
+	promIP = flag.String("promip", "", "IP address of Prometheus server")
+	cmd = flag.String("command", "", "<targets|alerts|metrics|query|runtime>")
 	job = flag.String("job", "", "show only targets/metrics from specified job")
 	query = flag.String("query", "", "PromQL query string")
 	version = flag.Bool("version", false, "Output program version and exit")
@@ -374,10 +375,18 @@ func main() {
 		os.Exit(0)
 	}
 
-	if *promURL == "" {
-		fmt.Fprintf(os.Stderr, "-promurl is a required argument\n\n")
+	if *promURL == "" && *promIP == "" {
+		fmt.Fprintf(os.Stderr, "Either -promurl or -promip must be specified\n\n")
 		usage()
 		os.Exit(2)
+	}
+	if *promURL != "" && *promIP != "" {
+		fmt.Fprintf(os.Stderr, "-promurl and -promip are mutually exclusive\n\n")
+		usage()
+		os.Exit(2)
+	}
+	if *promIP != "" {
+		*promURL = fmt.Sprintf("http://%s:9090", *promIP)
 	}
 	if *cmd == "" {
 		fmt.Fprintf(os.Stderr, "-command is a required argument\n\n")
