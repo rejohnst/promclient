@@ -20,58 +20,77 @@ var (
 	gitRevision string
 )
 
-type promClient struct {
-	pcAPI     v1.API
-	pcCtx     context.Context
-	pcVerbose bool
-	pcCount   bool
-	pcCSV     bool
+type promTargetArgs struct {
+	verbose bool
+	// if true, only output information for active targets
+	active bool
+	// if true, only output information for active targets who's state is "down"
+	down bool
+	// if true, just print a count of the matching targets found
+	count bool
+	// only print information on targets associated with the specified job
+	job string
 }
 
-type promQueryParams struct {
-	pqQuery string
-	pqRange v1.Range
+type promAlertArgs struct {
+	verbose bool
+	// if true, only output information on critical alerts
+	critical bool
+	// if true, just print a count of the matching alerts found
+	count bool
+}
+
+type promMetricArgs struct {
+	verbose bool
+	// if true, just print a count of the matching metrics found
+	count bool
+	// if true, print parseable outout ib CSV format
+	csv bool
+	// only print information on metrics associated with the specified job
+	job string
+}
+
+type promQueryArgs struct {
+	// if true, print query time elapsed
+	timed bool
 }
 
 type promAlert struct {
 	paSeverity string
 	paDescs    []string
 }
+type promQueryParams struct {
+	pqQuery string
+	pqRange v1.Range
+}
 
 //
 // Dump information on Prometheus targets
 //
-// args:
-// job: only print information on targets associated with the specified job
-// active: if true, only output information for active targets
-// down: if true, only output infromation for active targets who's state is "down"
-//
-// returns: void
-//
-func promTargets(client *promClient, job string, active bool, down bool) {
+func promTargets(ctx context.Context, api v1.API, args *promTargetArgs) {
 	var count int32
 
-	result, err := client.pcAPI.Targets(client.pcCtx)
+	result, err := api.Targets(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
 		os.Exit(1)
 	}
 
-	if !down && !client.pcCount {
+	if !args.down && !args.count {
 		fmt.Printf("Active targets\n")
 		fmt.Printf("==============\n")
 	}
 	for _, target := range result.Active {
 
-		if job != "" && job != string(target.Labels["job"]) {
+		if args.job != "" && args.job != string(target.Labels["job"]) {
 			continue
 		}
-		if down && target.Health != v1.HealthBad {
+		if args.down && target.Health != v1.HealthBad {
 			continue
 		}
 
 		count++
-		if client.pcCount {
+		if args.count {
 			continue
 		}
 
@@ -86,7 +105,7 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 			fmt.Printf("%-20s %s\n", "Error:", target.LastError)
 		}
 
-		if client.pcVerbose {
+		if args.verbose {
 			for k, v := range target.DiscoveredLabels {
 				fmt.Printf("%-20s %s\n", k, v)
 			}
@@ -94,8 +113,8 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 		fmt.Printf("\n")
 	}
 
-	if active {
-		if client.pcCount {
+	if args.active {
+		if args.count {
 			fmt.Printf("%d\n", count)
 		}
 		return
@@ -103,11 +122,11 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 
 	fmt.Printf("Dropped targets:\n")
 	for _, target := range result.Dropped {
-		if job != "" && job != target.DiscoveredLabels["job"] {
+		if args.job != "" && args.job != target.DiscoveredLabels["job"] {
 			continue
 		}
 		fmt.Printf("Job: %s\n", target.DiscoveredLabels["job"])
-		if client.pcVerbose {
+		if args.verbose {
 			for k, v := range target.DiscoveredLabels {
 				fmt.Printf("%s: %s\n", k, v)
 			}
@@ -119,13 +138,8 @@ func promTargets(client *promClient, job string, active bool, down bool) {
 //
 // Dump all active alerts
 //
-// args:
-// critical: if true, only print alerts with critical severity
-//
-// returns: void
-//
-func promAlerts(client *promClient, critical bool) {
-	result, err := client.pcAPI.Alerts(client.pcCtx)
+func promAlerts(ctx context.Context, api v1.API, args *promAlertArgs) {
+	result, err := api.Alerts(ctx)
 	alerts := make(map[string]*promAlert)
 
 	if err != nil {
@@ -133,7 +147,7 @@ func promAlerts(client *promClient, critical bool) {
 		os.Exit(1)
 	}
 
-	if client.pcCount {
+	if args.count {
 		fmt.Printf("%d\n", len(result.Alerts))
 		return
 	}
@@ -143,7 +157,7 @@ func promAlerts(client *promClient, critical bool) {
 		if alert.Labels["alertname"] == "Watchdog" {
 			continue
 		}
-		if critical && alert.Labels["severity"] != "critical" {
+		if args.critical && alert.Labels["severity"] != "critical" {
 			continue
 		}
 		key := string(alert.Labels["alertname"])
@@ -179,23 +193,18 @@ func seqSearch(key string, arr []string) bool {
 //
 // Dump Prometheus' metric metadata
 //
-// args:
-// job: only print metric metadata associated with the specified job
-//
 // If the -csv CLI option was set then output metric metadata in CSV format:
 //
 // <job>,<metric-name>,<metric-help>,<metric-type>
 //
-// returns: void
-//
-func promMetrics(client *promClient, job string) {
+func promMetrics(ctx context.Context, api v1.API, args *promMetricArgs) {
 	var jobs []string
 	var count int32
 
-	if job != "" {
-		jobs = append(jobs, job)
+	if args.job != "" {
+		jobs = append(jobs, args.job)
 	} else {
-		result, err := client.pcAPI.Targets(client.pcCtx)
+		result, err := api.Targets(ctx)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
 			os.Exit(1)
@@ -219,18 +228,18 @@ func promMetrics(client *promClient, job string) {
 
 	for _, j := range jobs {
 		match := fmt.Sprintf("{job=\"%s\"}", j)
-		metrics, err := client.pcAPI.TargetsMetadata(client.pcCtx, match, "", "")
+		metrics, err := api.TargetsMetadata(ctx, match, "", "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error retrieving metric metadata for %s: %v\n", j, err)
 			os.Exit(1)
 		}
 		for _, metric := range metrics {
 			count++
-			if client.pcCount {
+			if args.count {
 				continue
 			}
 
-			if client.pcCSV {
+			if args.csv {
 				// Since we're outputting a CSV file, we need to replace any
 				// comma chars in the help string with something else
 				help := strings.ReplaceAll(metric.Help, ",", ";")
@@ -244,7 +253,7 @@ func promMetrics(client *promClient, job string) {
 			}
 		}
 	}
-	if client.pcCount {
+	if args.count {
 		fmt.Printf("%d\n", count)
 	}
 }
@@ -252,13 +261,7 @@ func promMetrics(client *promClient, job string) {
 //
 // Perform a PromQL query and print the results
 //
-// args:
-// pq:	  pointer to promQueryParam struct
-// timed: if true, print wallclock time elapsed during query
-//
-// returns: void
-//
-func promQuery(client *promClient, pq *promQueryParams, timed bool) {
+func promQuery(ctx context.Context, api v1.API, args *promQueryArgs, pq *promQueryParams) {
 	var result model.Value
 	var warnings v1.Warnings
 	var err error
@@ -266,9 +269,9 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 
 	t1 = time.Now()
 	if (v1.Range{}) == pq.pqRange {
-		result, warnings, err = client.pcAPI.Query(client.pcCtx, pq.pqQuery, time.Now())
+		result, warnings, err = api.Query(ctx, pq.pqQuery, time.Now())
 	} else {
-		result, warnings, err = client.pcAPI.QueryRange(client.pcCtx, pq.pqQuery, pq.pqRange)
+		result, warnings, err = api.QueryRange(ctx, pq.pqQuery, pq.pqRange)
 	}
 	t2 = time.Now()
 
@@ -309,15 +312,15 @@ func promQuery(client *promClient, pq *promQueryParams, timed bool) {
 		fmt.Printf("%v\n", result)
 	}
 
-	if timed {
+	if args.timed {
 		elapsed := t2.Sub(t1)
 		// time.Format is weird - see https://golang.org/pkg/time/#Time.Format
 		fmt.Printf("query time: %s\n", time.Time{}.Add(elapsed).Format("04:05"))
 	}
 }
 
-func promRuntime(client *promClient) {
-	result, err := client.pcAPI.Runtimeinfo(client.pcCtx)
+func promRuntime(ctx context.Context, api v1.API) {
+	result, err := api.Runtimeinfo(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error retrieving Primetheus runtime info: %v\n", err)
 		os.Exit(1)
@@ -346,7 +349,6 @@ func usage() {
 }
 
 func main() {
-	var client promClient
 	var pq promQueryParams
 	var promURL, promIP, cmd, job, query, len, step *string
 	var verbose, active, down, csv, timed, count, version, critical *bool
@@ -404,17 +406,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	client.pcVerbose = *verbose
-	client.pcCount = *count
-	client.pcCSV = *csv
-	client.pcAPI = v1.NewAPI(apiclient)
-	client.pcCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+	api := v1.NewAPI(apiclient)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
 	switch *cmd {
 	case "alerts":
-		promAlerts(&client, *critical)
+		args := promAlertArgs{*verbose, *critical, *count}
+		promAlerts(ctx, api, &args)
 	case "metrics":
-		promMetrics(&client, *job)
+		args := promMetricArgs{*verbose, *count, *csv, *job}
+		promMetrics(ctx, api, &args)
 	case "query":
 		if *query == "" {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
@@ -442,11 +443,13 @@ func main() {
 				Step:  stepDur,
 			}
 		}
-		promQuery(&client, &pq, *timed)
+		args := promQueryArgs{*timed}
+		promQuery(ctx, api, &args, &pq)
 	case "runtime":
-		promRuntime(&client)
+		promRuntime(ctx, api)
 	case "targets":
-		promTargets(&client, *job, *active, *down)
+		args := promTargetArgs{*verbose, *active, *down, *count, *job}
+		promTargets(ctx, api, &args)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
 		os.Exit(2)
