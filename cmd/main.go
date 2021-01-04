@@ -340,35 +340,34 @@ func promRuntime(ctx context.Context, api v1.API) {
 
 func usage() {
 	fmt.Printf("promurl -version\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed]\n\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>]\n\n")
 	flag.Usage()
 }
 
 func main() {
 	var pq promQueryParams
-	var promURL, promIP, cmd, job, query, len, step *string
-	var verbose, active, down, csv, timed, count, version, critical *bool
 	var cancel context.CancelFunc
 
-	promURL = flag.String("promurl", "", "URL of Prometheus server")
-	promIP = flag.String("promip", "", "IP address of Prometheus server")
-	cmd = flag.String("command", "", "<targets|alerts|metrics|query|runtime>")
-	job = flag.String("job", "", "show only targets/metrics from specified job")
-	query = flag.String("query", "", "PromQL query string")
-	version = flag.Bool("version", false, "Output program version and exit")
-	len = flag.String("len", "", "Length of query range")
-	step = flag.String("step", "1m", "Range resolution")
-	timed = flag.Bool("timed", false, "Show query time")
-	active = flag.Bool("active", false, "only display active targets")
-	down = flag.Bool("down", false, "only display active targets that are down (implies -active)")
-	count = flag.Bool("count", false, "only display a count of the requested items")
-	verbose = flag.Bool("verbose", false, "enable verbose mode")
-	csv = flag.Bool("csv", false, "output metric metadata as CSV")
-	critical = flag.Bool("critical", false, "only show critical alerts")
+	promURL := flag.String("promurl", "", "URL of Prometheus server")
+	promIP := flag.String("promip", "", "IP address of Prometheus server")
+	cmd := flag.String("command", "", "<targets|alerts|metrics|query|runtime>")
+	job := flag.String("job", "", "show only targets/metrics from specified job")
+	query := flag.String("query", "", "PromQL query string")
+	version := flag.Bool("version", false, "Output program version and exit")
+	len := flag.String("len", "", "Length of query range")
+	step := flag.String("step", "1m", "Range resolution")
+	timed := flag.Bool("timed", false, "Show query time")
+	active := flag.Bool("active", false, "only display active targets")
+	down := flag.Bool("down", false, "only display active targets that are down (implies -active)")
+	count := flag.Bool("count", false, "only display a count of the requested items")
+	verbose := flag.Bool("verbose", false, "enable verbose mode")
+	csv := flag.Bool("csv", false, "output metric metadata as CSV")
+	critical := flag.Bool("critical", false, "only show critical alerts")
+	timeout := flag.Int("timeout", 10, "request timeout length in seconds")
 	flag.Parse()
 
 	if *version {
@@ -407,7 +406,7 @@ func main() {
 	}
 
 	api := v1.NewAPI(apiclient)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeout)*time.Second)
 
 	switch *cmd {
 	case "alerts":

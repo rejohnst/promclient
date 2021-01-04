@@ -1,6 +1,51 @@
 # promclient
 CLI for Prometheus API
 
+## Usage Summary
+
+```
+promurl -version
+promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>]
+promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>]
+promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>]
+promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>]
+promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>]
+
+Usage of ./promclient:
+  -active
+    	only display active targets
+  -command string
+    	<targets|alerts|metrics|query|runtime>
+  -count
+    	only display a count of the requested items
+  -critical
+    	only show critical alerts
+  -csv
+    	output metric metadata as CSV
+  -down
+    	only display active targets that are down (implies -active)
+  -job string
+    	show only targets/metrics from specified job
+  -len string
+    	Length of query range
+  -promip string
+    	IP address of Prometheus server
+  -promurl string
+    	URL of Prometheus server
+  -query string
+    	PromQL query string
+  -step string
+    	Range resolution (default "1m")
+  -timed
+    	Show query time
+  -timeout int
+    	request timeout length in seconds (default 10)
+  -verbose
+    	enable verbose mode
+  -version
+    	Output program version and exit
+
+```
 ## Example Usages
 
 ### Get Prometheus' Runtime Info
