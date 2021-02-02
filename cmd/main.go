@@ -367,7 +367,7 @@ func main() {
 	verbose := flag.Bool("verbose", false, "enable verbose mode")
 	csv := flag.Bool("csv", false, "output metric metadata as CSV")
 	critical := flag.Bool("critical", false, "only show critical alerts")
-	timeout := flag.Int("timeout", 10, "request timeout length in seconds")
+	timeout := flag.Int("timeout", 30, "request timeout length in seconds")
 	flag.Parse()
 
 	if *version {
