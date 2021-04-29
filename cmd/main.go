@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -340,11 +343,11 @@ func promRuntime(ctx context.Context, api v1.API) {
 
 func usage() {
 	fmt.Printf("promurl -version\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>]\n\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]\n\n")
 	flag.Usage()
 }
 
@@ -368,6 +371,7 @@ func main() {
 	csv := flag.Bool("csv", false, "output metric metadata as CSV")
 	critical := flag.Bool("critical", false, "only show critical alerts")
 	timeout := flag.Int("timeout", 30, "request timeout length in seconds")
+	insecure := flag.Bool("insecure", false, "Skip certificate verification")
 	flag.Parse()
 
 	if *version {
@@ -397,8 +401,24 @@ func main() {
 	if *down {
 		*active = true
 	}
+
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: *insecure,
+	}
+	var rt http.RoundTripper = &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout:   5 * time.Second,
+		TLSClientConfig:       tlsConfig,
+		ResponseHeaderTimeout: time.Duration(3 * time.Second),
+		DisableKeepAlives:     true,
+	}
+
 	apiclient, err := api.NewClient(api.Config{
-		Address: *promURL,
+		Address:      *promURL,
+		RoundTripper: rt,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating client: %v\n", err)
