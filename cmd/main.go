@@ -412,7 +412,7 @@ func main() {
 		}).Dial,
 		TLSHandshakeTimeout:   5 * time.Second,
 		TLSClientConfig:       tlsConfig,
-		ResponseHeaderTimeout: time.Duration(3 * time.Second),
+		ResponseHeaderTimeout: time.Duration(time.Duration(*timeout) * time.Second),
 		DisableKeepAlives:     true,
 	}
 
