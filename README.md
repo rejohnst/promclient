@@ -5,11 +5,11 @@ CLI for Prometheus API
 
 ```
 promurl -version
-promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>]
-promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>]
-promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>]
-promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>]
-promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>]
+promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] [-insecure]
+promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>] [-insecure]
+promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>] [-insecure]
+promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>] [-insecure]
+promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]
 
 Usage of ./promclient:
   -active
@@ -24,6 +24,8 @@ Usage of ./promclient:
     	output metric metadata as CSV
   -down
     	only display active targets that are down (implies -active)
+  -insecure
+        Skip certificate verification
   -job string
     	show only targets/metrics from specified job
   -len string
@@ -37,15 +39,16 @@ Usage of ./promclient:
   -step string
     	Range resolution (default "1m")
   -timed
-    	Show query time
+        Show query time
   -timeout int
-    	request timeout length in seconds (default 10)
+        Request timeout length in seconds (default 30)
   -verbose
     	enable verbose mode
   -version
     	Output program version and exit
 
 ```
+
 ## Example Usages
 
 ### Get Prometheus' Runtime Info
