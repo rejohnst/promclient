@@ -1,6 +1,13 @@
 # promclient
 CLI for Prometheus API
 
+## Local Installation
+
+```
+go get -d github.com/rejohnst/promclient/cmd
+go build -o $GOPATH/bin/promclient github.com/rejohnst/promclient/cmd
+```
+
 ## Usage Summary
 
 ```
