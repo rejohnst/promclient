@@ -15,7 +15,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 
-	str2duration "github.com/xhit/go-str2duration"
+	str2duration "github.com/xhit/go-str2duration/v2"
 )
 
 var (
@@ -445,12 +445,12 @@ func main() {
 		// If the len option was specifiec, we'll do a range query.  Otherwise,
 		// we'll do an instant query
 		if *len != "" {
-			lenDur, err := str2duration.Str2Duration(*len)
+			lenDur, err := str2duration.ParseDuration(*len)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to parse len: %s\n", *len)
 				os.Exit(1)
 			}
-			stepDur, err := str2duration.Str2Duration(*step)
+			stepDur, err := str2duration.ParseDuration(*step)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "failed to parse step: %s\n", *len)
 				os.Exit(1)
