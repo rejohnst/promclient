@@ -46,7 +46,7 @@ func main() {
 	promIP := flag.String("promip", "", "IP address of Prometheus server")
 	cmd := flag.String("command", "", "<targets|alerts|metrics|query|runtime>")
 	job := flag.String("job", "", "show only targets/metrics from specified job")
-	query := flag.String("query", "", "PromQL query string")
+	promquery := flag.String("query", "", "PromQL query string")
 	version := flag.Bool("version", false, "Output program version and exit")
 	len := flag.String("len", "", "Length of query range")
 	step := flag.String("step", "1m", "Range resolution")
@@ -123,11 +123,11 @@ func main() {
 		args := metrics.MetricArgs{*verbose, *count, *csv, *job}
 		metrics.Metrics(ctx, api, &args)
 	case "query":
-		if *query == "" {
+		if *promquery == "" {
 			fmt.Fprintf(os.Stderr, "-query argument is required for query command")
 			os.Exit(2)
 		}
-		pq.Query = *query
+		pq.Query = *promquery
 
 		// If the len option was specifiec, we'll do a range query.  Otherwise,
 		// we'll do an instant query
