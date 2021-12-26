@@ -4,8 +4,8 @@ REVISION=$(shell git log --oneline | head -1 | cut -d\  -f 1)
 LDFLAGS=-ldflags "-X main.gitRevision=$(REVISION) -X main.buildTime=$(BUILDTIME)"
 
 all:
-	go build $(LDFLAGS) -o promclient cmd/main.go
+	go build $(LDFLAGS) -o promclient main.go
 
 check:
-	go vet cmd/main.go
-	golint cmd/main.go
+	go vet main.go
+	golint main.go
