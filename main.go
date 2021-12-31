@@ -33,7 +33,7 @@ func usage() {
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]\n\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] [-insecure]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=rules [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>] [-insecure]\n")
 	flag.Usage()
 }
@@ -59,6 +59,8 @@ func main() {
 	critical := flag.Bool("critical", false, "only show critical alerts")
 	timeout := flag.Int("timeout", 30, "request timeout length in seconds")
 	insecure := flag.Bool("insecure", false, "Skip certificate verification")
+	rulename := flag.String("rule", "", "Prometheus rule name")
+
 	flag.Parse()
 
 	if *version {
@@ -113,14 +115,19 @@ func main() {
 	}
 
 	api := v1.NewAPI(apiclient)
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(*timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(),
+		time.Duration(*timeout)*time.Second)
 
 	switch *cmd {
 	case "alerts":
-		args := alerts.AlertArgs{*critical, *count}
+		args := alerts.AlertArgs{Critical: *critical, Count: *count}
 		alerts.Alerts(ctx, api, &args)
 	case "metrics":
-		args := metrics.MetricArgs{*verbose, *count, *csv, *job}
+		args := metrics.MetricArgs{
+			Verbose: *verbose,
+			Count:   *count,
+			Csv:     *csv,
+			Job:     *job}
 		metrics.Metrics(ctx, api, &args)
 	case "query":
 		if *promquery == "" {
@@ -149,14 +156,20 @@ func main() {
 				Step:  stepDur,
 			}
 		}
-		args := query.QueryArgs{*timed}
+		args := query.QueryArgs{Timed: *timed}
 		query.Query(ctx, api, &args, &pq)
 	case "runtime":
 		runtime.Runtime(ctx, api)
 	case "rules":
-		rules.Rules(ctx, api)
+		args := rules.RuleArgs{Name: *rulename}
+		rules.Rules(ctx, api, args)
 	case "targets":
-		args := targets.TargetArgs{*verbose, *active, *down, *count, *job}
+		args := targets.TargetArgs{
+			Verbose: *verbose,
+			Active:  *active,
+			Down:    *down,
+			Count:   *count,
+			Job:     *job}
 		targets.Targets(ctx, api, &args)
 	default:
 		fmt.Fprintf(os.Stderr, "Invalid command: %s\n", *cmd)
