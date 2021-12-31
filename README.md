@@ -57,6 +57,15 @@ promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] \
     	show only metrics from specified job
 ```
 
+### Print Prometheus Rule Status
+```
+promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>] \
+  [-timeout=<# secs>] [-insecure]
+
+  -rule
+    	show detailed info for specified rule
+```
+
 ### Query the Prometheus TSDB
 ```
 promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> \
