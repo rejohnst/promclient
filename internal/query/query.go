@@ -54,9 +54,14 @@ func Query(ctx context.Context, api v1.API, args *QueryArgs, pq *QueryParams, sk
 	case result.Type() == model.ValVector:
 		samples := result.(model.Vector)
 		for _, sample := range samples {
-			fmt.Printf("[%s] %s = %v\n",
-				sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
-				sample.Metric.String(), sample.Value)
+			if !*skipTimestamp {
+				fmt.Printf("[%s] %s = %v\n",
+					sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
+					sample.Metric.String(), sample.Value)
+			} else {
+				fmt.Printf("%s = %v\n",
+					sample.Metric.String(), sample.Value)
+			}
 		}
 	case result.Type() == model.ValMatrix:
 		streams := result.(model.Matrix)
