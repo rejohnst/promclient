@@ -23,7 +23,7 @@ type QueryParams struct {
 //
 // Perform a PromQL query and print the results
 //
-func Query(ctx context.Context, api v1.API, args *QueryArgs, pq *QueryParams) {
+func Query(ctx context.Context, api v1.API, args *QueryArgs, pq *QueryParams, skipTimestamp *bool) {
 	var result model.Value
 	var warnings v1.Warnings
 	var err error
@@ -54,18 +54,29 @@ func Query(ctx context.Context, api v1.API, args *QueryArgs, pq *QueryParams) {
 	case result.Type() == model.ValVector:
 		samples := result.(model.Vector)
 		for _, sample := range samples {
-			fmt.Printf("[%s] %s = %v\n",
-				sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
-				sample.Metric.String(), sample.Value)
+			if !*skipTimestamp {
+				fmt.Printf("[%s] %s = %v\n",
+					sample.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
+					sample.Metric.String(), sample.Value)
+			} else {
+				fmt.Printf("%s = %v\n",
+					sample.Metric.String(), sample.Value)
+			}
 		}
 	case result.Type() == model.ValMatrix:
 		streams := result.(model.Matrix)
 		for _, stream := range streams {
 			fmt.Printf("%s = \n", stream.Metric.String())
 			for _, val := range stream.Values {
-				fmt.Printf("\t[%s] %v\n",
-					val.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
-					val.Value)
+				if !*skipTimestamp {
+					fmt.Printf("\t[%s] %v\n",
+						val.Timestamp.Time().Format("Jan 2 15:04:05 -0700 MST"),
+						val.Value)
+				} else {
+					fmt.Printf("\t%v\n",
+						val.Value)
+				}
+
 			}
 		}
 	case result.Type() == model.ValScalar:
