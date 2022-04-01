@@ -51,7 +51,7 @@ func main() {
 	len := flag.String("len", "", "Length of query range")
 	step := flag.String("step", "1m", "Range resolution")
 	timed := flag.Bool("timed", false, "Show query time")
-	skipTimestamp := flag.Bool("skip_timestamp", false, "Skip timestamp in range query")
+	skipTimestamp := flag.Bool("skip_timestamp", false, "Skip timestamp in query output")
 	active := flag.Bool("active", false, "only display active targets")
 	down := flag.Bool("down", false, "only display active targets that are down (implies -active)")
 	count := flag.Bool("count", false, "only display a count of the requested items")
