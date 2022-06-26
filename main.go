@@ -29,7 +29,7 @@ var (
 
 func usage() {
 	fmt.Printf("promurl -version\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=alerts [-severity=<severity>] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]\n\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] [-insecure]\n")
@@ -42,24 +42,35 @@ func main() {
 	var pq query.QueryParams
 	var cancel context.CancelFunc
 
+	// Flags common to multiple commands
 	promURL := flag.String("promurl", "", "URL of Prometheus server")
 	promIP := flag.String("promip", "", "IP address of Prometheus server")
 	cmd := flag.String("command", "", "<targets|alerts|metrics|query|runtime>")
 	job := flag.String("job", "", "show only targets/metrics from specified job")
-	promquery := flag.String("query", "", "PromQL query string")
+	count := flag.Bool("count", false, "only display a count of the requested items")
+	verbose := flag.Bool("verbose", false, "enable verbose mode")
+	timeout := flag.Int("timeout", 30, "request timeout length in seconds")
+	insecure := flag.Bool("insecure", false, "Skip TLS certificate verification")
 	version := flag.Bool("version", false, "Output program version and exit")
+
+	// Flags for query command
+	promquery := flag.String("query", "", "PromQL query string")
 	len := flag.String("len", "", "Length of query range")
 	step := flag.String("step", "1m", "Range resolution")
 	timed := flag.Bool("timed", false, "Show query time")
-	skipTimestamp := flag.Bool("skip_timestamp", false, "Skip timestamp in query output")
+	skipTimestamp := flag.Bool("skip_timestamp", true, "Skip timestamp in query output")
+
+	// Flags for target command
 	active := flag.Bool("active", false, "only display active targets")
 	down := flag.Bool("down", false, "only display active targets that are down (implies -active)")
-	count := flag.Bool("count", false, "only display a count of the requested items")
-	verbose := flag.Bool("verbose", false, "enable verbose mode")
+
+	// Flags for metrics command
 	csv := flag.Bool("csv", false, "output metric metadata as CSV")
-	critical := flag.Bool("critical", false, "only show critical alerts")
-	timeout := flag.Int("timeout", 30, "request timeout length in seconds")
-	insecure := flag.Bool("insecure", false, "Skip certificate verification")
+
+	// Flags for alerts command
+	severity := flag.String("severity", "", "filter alerts by specified severity")
+
+	// Flags for rules command
 	rulename := flag.String("rule", "", "Prometheus rule name")
 
 	flag.Parse()
@@ -121,7 +132,7 @@ func main() {
 
 	switch *cmd {
 	case "alerts":
-		args := alerts.AlertArgs{Critical: *critical, Count: *count}
+		args := alerts.AlertArgs{Severity: severity, Count: *count}
 		alerts.Alerts(ctx, api, &args)
 	case "metrics":
 		args := metrics.MetricArgs{

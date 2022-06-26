@@ -6,11 +6,12 @@ import (
 	"os"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
 )
 
 type AlertArgs struct {
-	// if true, only output information on critical alerts
-	Critical bool
+	// if set, filter results by severity
+	Severity *string
 	// if true, just print a count of the matching alerts found
 	Count bool
 }
@@ -42,7 +43,7 @@ func Alerts(ctx context.Context, api v1.API, args *AlertArgs) {
 		if alert.Labels["alertname"] == "Watchdog" {
 			continue
 		}
-		if args.Critical && alert.Labels["severity"] != "critical" {
+		if *args.Severity != "" && alert.Labels["severity"] != model.LabelValue(*args.Severity) {
 			continue
 		}
 		key := string(alert.Labels["alertname"])

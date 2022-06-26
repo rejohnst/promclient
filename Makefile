@@ -6,6 +6,9 @@ LDFLAGS=-ldflags "-X main.gitRevision=$(REVISION) -X main.buildTime=$(BUILDTIME)
 all:
 	go build $(LDFLAGS) -o promclient main.go
 
+install:
+	install -m 0755 promclient $(GOPATH)/bin/
+
 check:
 	go vet main.go
 	golint main.go

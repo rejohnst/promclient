@@ -38,11 +38,12 @@ promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] \
 
 ### Print Active Alerts
 ```
-promurl -promurl=<arg>|-promip=<arg> -command=alerts [-critical] \
+promurl -promurl=<arg>|-promip=<arg> -command=alerts \
+  [-severity=<severity>] \
   [-timeout=<# secs>] [-insecure]
 
-  -critical
-    	only show critical alerts
+  -severity
+    filter results by specified severity
 ```
 
 ### Print Metric Metadata
