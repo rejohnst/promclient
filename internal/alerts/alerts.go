@@ -40,9 +40,10 @@ func Alerts(ctx context.Context, api v1.API, args *AlertArgs) {
 
 	fmt.Printf("\n")
 	for _, alert := range result.Alerts {
-		if alert.Labels["alertname"] == "Watchdog" {
+		if alert.Labels["alertname"] == "Watchdog" || alert.State != "firing" {
 			continue
 		}
+
 		if *args.Severity != "" && alert.Labels["severity"] != model.LabelValue(*args.Severity) {
 			continue
 		}
