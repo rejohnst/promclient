@@ -11,7 +11,8 @@ import (
 )
 
 type RuleArgs struct {
-	Name string
+	RuleName  string
+	RuleGroup string
 }
 
 //
@@ -81,15 +82,19 @@ func Rules(ctx context.Context, api v1.API, args RuleArgs) {
 	}
 
 	for _, rulegrp := range result.Groups {
-		if args.Name == "" {
+		if args.RuleGroup != "" && args.RuleGroup != rulegrp.Name {
+			continue
+		}
+		if args.RuleName == "" &&
+			(args.RuleGroup == "" || args.RuleGroup == rulegrp.Name) {
 			fmt.Printf("Group: %s\n", rulegrp.Name)
 		}
 		for _, rule := range rulegrp.Rules {
 			switch v := rule.(type) {
 			case v1.AlertingRule:
 				alertRule := rule.(v1.AlertingRule)
-				if args.Name != "" {
-					if args.Name == alertRule.Name {
+				if args.RuleName != "" {
+					if args.RuleName == alertRule.Name {
 						printAlertRule(alertRule)
 					}
 				} else {
@@ -97,8 +102,8 @@ func Rules(ctx context.Context, api v1.API, args RuleArgs) {
 				}
 			case v1.RecordingRule:
 				recRule := rule.(v1.RecordingRule)
-				if args.Name != "" {
-					if args.Name == recRule.Name {
+				if args.RuleName != "" {
+					if args.RuleName == recRule.Name {
 						printRecordRule(recRule)
 					}
 				} else {

@@ -33,7 +33,7 @@ func usage() {
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] [-csv] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]\n\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] [-insecure]\n")
-	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>] [-timeout=<# secs>] [-insecure]\n")
+	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>|-group=<arg>] [-timeout=<# secs>] [-insecure]\n")
 	fmt.Printf("promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] [-verbose] [-timeout=<# secs>] [-insecure]\n")
 	flag.Usage()
 }
@@ -72,6 +72,7 @@ func main() {
 
 	// Flags for rules command
 	rulename := flag.String("rule", "", "Prometheus rule name")
+	grpame := flag.String("group", "", "Prometheus rule group")
 
 	flag.Parse()
 
@@ -173,7 +174,11 @@ func main() {
 	case "runtime":
 		runtime.Runtime(ctx, api)
 	case "rules":
-		args := rules.RuleArgs{Name: *rulename}
+		if *rulename != "" && *grpame != "" {
+			fmt.Fprintf(os.Stderr, "-rule and -group are mutually exclusive")
+			os.Exit(2)
+		}
+		args := rules.RuleArgs{RuleName: *rulename, RuleGroup: *grpame}
 		rules.Rules(ctx, api, args)
 	case "targets":
 		args := targets.TargetArgs{

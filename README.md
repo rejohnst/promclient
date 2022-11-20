@@ -60,11 +60,14 @@ promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] \
 
 ### Print Prometheus Rule Status
 ```
-promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>] \
+promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>|-group=<arg>] \
   [-timeout=<# secs>] [-insecure]
 
   -rule
     	show detailed info for specified rule
+
+  -group
+        show only data for specified rule group
 ```
 
 ### Query the Prometheus TSDB
