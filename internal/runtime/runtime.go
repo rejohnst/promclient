@@ -11,7 +11,7 @@ import (
 func Runtime(ctx context.Context, api v1.API) {
 	result, err := api.Runtimeinfo(ctx)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error retrieving Primetheus runtime info: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error retrieving Prometheus runtime info: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("%-30s %s\n", "CWD:", result.CWD)
