@@ -3,7 +3,7 @@ package rules
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
 	"sort"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -15,104 +15,97 @@ type RuleArgs struct {
 	RuleGroup string
 }
 
-//
-// Print a model.LabelsSet in sorted (by keys) orderm with fields
-// optionally indentex
-//
-func printLabelSet(labels model.LabelSet, indent string) {
+func printLabelSet(w io.Writer, labels model.LabelSet, indent string) {
 	sortedLabels := make([]string, 0, len(labels))
-	for labelname := range labels {
-		sortedLabels = append(sortedLabels, string(labelname))
+	for labelName := range labels {
+		sortedLabels = append(sortedLabels, string(labelName))
 	}
-
 	sort.Strings(sortedLabels)
 
-	for _, labelname := range sortedLabels {
-		fmt.Printf("%s%s: %s\n", indent, labelname, labels[model.LabelName(labelname)])
+	for _, labelName := range sortedLabels {
+		fmt.Fprintf(w, "%s%s: %s\n", indent, labelName, labels[model.LabelName(labelName)])
 	}
 }
 
-func printAlertRule(rule v1.AlertingRule) {
-	fmt.Printf("\n")
-	fmt.Printf("%-20s %s\n", "Type:", "alerting rule")
-	fmt.Printf("%-20s %s\n", "Name:", rule.Name)
-	fmt.Printf("%-20s %s\n", "Expression:", rule.Query)
-	fmt.Printf("%-20s %v secs\n", "For:", rule.Duration)
-	fmt.Printf("Annotations:\n")
-	printLabelSet(rule.Annotations, "  ")
-	fmt.Printf("Labels:\n")
-	printLabelSet(rule.Labels, "  ")
-	fmt.Printf("%-20s %s\n", "Rule Health:", rule.Health)
+func printAlertRule(w io.Writer, rule v1.AlertingRule) {
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%-20s %s\n", "Type:", "alerting rule")
+	fmt.Fprintf(w, "%-20s %s\n", "Name:", rule.Name)
+	fmt.Fprintf(w, "%-20s %s\n", "Expression:", rule.Query)
+	fmt.Fprintf(w, "%-20s %v secs\n", "For:", rule.Duration)
+	fmt.Fprintln(w, "Annotations:")
+	printLabelSet(w, rule.Annotations, "  ")
+	fmt.Fprintln(w, "Labels:")
+	printLabelSet(w, rule.Labels, "  ")
+	fmt.Fprintf(w, "%-20s %s\n", "Rule Health:", rule.Health)
 	if rule.Health != "ok" {
-		fmt.Printf("    %-20s %s\n", "last error:", rule.LastError)
+		fmt.Fprintf(w, "    %-20s %s\n", "last error:", rule.LastError)
 	}
-	fmt.Printf("%-20s %s\n", "State:", rule.State)
+	fmt.Fprintf(w, "%-20s %s\n", "State:", rule.State)
 	if len(rule.Alerts) > 0 {
-		fmt.Printf("Active Alerts:\n")
+		fmt.Fprintln(w, "Active Alerts:")
 		for _, alert := range rule.Alerts {
-			fmt.Printf("  %-20s %s\n", "Message:", alert.Annotations["message"])
-			fmt.Printf("  %-20s %s\n", "Last Fired:", alert.ActiveAt.Local().String())
+			fmt.Fprintf(w, "  %-20s %s\n", "Message:", alert.Annotations["message"])
+			fmt.Fprintf(w, "  %-20s %s\n", "Last Fired:", alert.ActiveAt.Local().String())
 		}
 	}
-	fmt.Printf("%-20s %v secs\n", "Evaluation Time:", rule.EvaluationTime)
-	fmt.Printf("%-20s %s\n", "Last Evaluation:", rule.LastEvaluation.Local().String())
+	fmt.Fprintf(w, "%-20s %v secs\n", "Evaluation Time:", rule.EvaluationTime)
+	fmt.Fprintf(w, "%-20s %s\n", "Last Evaluation:", rule.LastEvaluation.Local().String())
 }
 
-func printRecordRule(rule v1.RecordingRule) {
-	fmt.Printf("\n")
-	fmt.Printf("%-20s %s\n", "Type:", "recording rule")
-	fmt.Printf("%-20s %s\n", "Name:", rule.Name)
-	fmt.Printf("%-20s %s\n", "Expression:", rule.Query)
-	fmt.Printf("Labels:\n")
-	printLabelSet(rule.Labels, "  ")
-	fmt.Printf("%-20s %s\n", "Rule Health:", rule.Health)
+func printRecordRule(w io.Writer, rule v1.RecordingRule) {
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "%-20s %s\n", "Type:", "recording rule")
+	fmt.Fprintf(w, "%-20s %s\n", "Name:", rule.Name)
+	fmt.Fprintf(w, "%-20s %s\n", "Expression:", rule.Query)
+	fmt.Fprintln(w, "Labels:")
+	printLabelSet(w, rule.Labels, "  ")
+	fmt.Fprintf(w, "%-20s %s\n", "Rule Health:", rule.Health)
 	if rule.Health != "ok" {
-		fmt.Printf("    %-20s %s\n", "last error:", rule.LastError)
+		fmt.Fprintf(w, "    %-20s %s\n", "last error:", rule.LastError)
 	}
-	fmt.Printf("%-20s %v secs\n", "Evaluation Time:", rule.EvaluationTime)
-	fmt.Printf("%-20s %s\n", "Last Evaluation:", rule.LastEvaluation.Local().String())
+	fmt.Fprintf(w, "%-20s %v secs\n", "Evaluation Time:", rule.EvaluationTime)
+	fmt.Fprintf(w, "%-20s %s\n", "Last Evaluation:", rule.LastEvaluation.Local().String())
 }
 
-func Rules(ctx context.Context, api v1.API, args RuleArgs) {
+func Rules(ctx context.Context, api v1.API, w io.Writer, args RuleArgs) error {
 	result, err := api.Rules(ctx)
-
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error retrieving list of rules: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("retrieve rules: %w", err)
 	}
 
-	for _, rulegrp := range result.Groups {
-		if args.RuleGroup != "" && args.RuleGroup != rulegrp.Name {
+	for _, ruleGroup := range result.Groups {
+		if args.RuleGroup != "" && args.RuleGroup != ruleGroup.Name {
 			continue
 		}
-		if args.RuleName == "" &&
-			(args.RuleGroup == "" || args.RuleGroup == rulegrp.Name) {
-			fmt.Printf("Group: %s\n", rulegrp.Name)
+		if args.RuleName == "" && (args.RuleGroup == "" || args.RuleGroup == ruleGroup.Name) {
+			fmt.Fprintf(w, "Group: %s\n", ruleGroup.Name)
 		}
-		for _, rule := range rulegrp.Rules {
-			switch v := rule.(type) {
+
+		for _, rule := range ruleGroup.Rules {
+			switch rule := rule.(type) {
 			case v1.AlertingRule:
-				alertRule := rule.(v1.AlertingRule)
 				if args.RuleName != "" {
-					if args.RuleName == alertRule.Name {
-						printAlertRule(alertRule)
+					if args.RuleName == rule.Name {
+						printAlertRule(w, rule)
 					}
-				} else {
-					fmt.Printf("\tAlert Rule: %s\n", alertRule.Name)
+					continue
 				}
+				fmt.Fprintf(w, "\tAlert Rule: %s\n", rule.Name)
 			case v1.RecordingRule:
-				recRule := rule.(v1.RecordingRule)
 				if args.RuleName != "" {
-					if args.RuleName == recRule.Name {
-						printRecordRule(recRule)
+					if args.RuleName == rule.Name {
+						printRecordRule(w, rule)
 					}
-				} else {
-					fmt.Printf("\tRecording Rule: %s\n", recRule.Name)
+					continue
 				}
+				fmt.Fprintf(w, "\tRecording Rule: %s\n", rule.Name)
 			default:
-				fmt.Printf("unknown rule type %s\n", v)
+				fmt.Fprintf(w, "unknown rule type %T\n", rule)
 			}
 		}
 	}
-	fmt.Printf("\n")
+	fmt.Fprintln(w)
+
+	return nil
 }

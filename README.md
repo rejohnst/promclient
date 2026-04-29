@@ -1,127 +1,118 @@
 # promclient
-CLI for Prometheus API
 
-## Local Installation
+CLI for the Prometheus HTTP API.
 
-```
-go get -d github.com/rejohnst/promclient/cmd
-go build -o $GOPATH/bin/promclient github.com/rejohnst/promclient/cmd
-```
+## Build and Install
 
-## Usage Summary
-
-### Print CLI version
-```
-promurl -version
+```sh
+go install github.com/rejohnst/promclient@latest
 ```
 
-### Print Prometheus runtime configuration
-```
-promurl -promurl=<arg>|-promip=<arg> -command=runtime [-timeout=<# secs>] \
-  [-insecure]
-```
+For a local checkout:
 
-### Print Status of Prometheus Metric Targets
-```
-promurl -promurl=<arg>|-promip=<arg> -command=targets [-active|-down] \
-  [-verbose] [-timeout=<# secs>] [-insecure]
-
-  -active
-    	only display active targets
-
-  -down
-    	only display active targets that are down (implies -active)
-
-  -job string
-    	show only targets from specified job (implies -active)
+```sh
+make build
+make install
 ```
 
-### Print Active Alerts
-```
-promurl -promurl=<arg>|-promip=<arg> -command=alerts \
-  [-severity=<severity>] \
-  [-timeout=<# secs>] [-insecure]
+## Usage
 
-  -severity
-    filter results by specified severity
+```sh
+promclient -version
+promclient [client flags] <command> [command flags]
 ```
 
-### Print Metric Metadata
-```
-promurl -promurl=<arg>|-promip=<arg> -command=metrics [-job=<arg>] [-count] \
-  [-csv] [-timeout=<# secs>] [-insecure]
+Client flags may be set before or after the command:
 
-  -csv
-    	output metric metadata as CSV
-
-  -job string
-    	show only metrics from specified job
-```
-
-### Print Prometheus Rule Status
-```
-promurl -promurl=<arg>|-promip=<arg> -command=rules [-rule=<arg>|-group=<arg>] \
-  [-timeout=<# secs>] [-insecure]
-
-  -rule
-    	show detailed info for specified rule
-
-  -group
-        show only data for specified rule group
-```
-
-### Query the Prometheus TSDB
-```
-promurl -promurl=<arg>|-promip=<arg> -command=query -query=<arg> \
-  [-len=<arg>] [-step=<arg>] [-timed] [-timeout=<# secs>] [-insecure]
-
-  -len string
-    	Length of query range
-
-  -query string
-    	PromQL query string
-
-  -step string
-    	Range resolution (default "1m")
-
-  -timed
-      Show query time
-```
-
-### CLI options common to multiple commands:
-```
-  -command string
-    	<alerts|metrics|query|rules|runtime|targets>
-
-  -count
-    	only display a count of the requested items
-
+```text
   -insecure
-      Skip certificate verification
-
+        skip TLS certificate verification
   -promip string
-    	IP address of Prometheus server
- 
+        IP address of Prometheus server; uses http://<ip>:9090
   -promurl string
-    	URL of Prometheus server
-
+        URL of Prometheus server
   -timeout int
-      Request timeout length in seconds (default 30)
-
-  -verbose
-    	enable verbose mode
+        request timeout length in seconds (default 30)
 ```
 
-## Example Usages
+Exactly one of `-promurl` or `-promip` is required for commands that contact Prometheus.
 
-### Print info on down node-exporter targets
+## Commands
 
-```promclient -promurl=<Prometheus URL>|-promip=<Prometheus IP> -command=targets job=node-exporter -down```
+### Runtime
 
-### Show only critical active Prometheus alerts
+```sh
+promclient runtime -promurl=<url>
+```
 
-```promclient -promurl=<Prometheus URL>|-promip=<Prometheus IP> -command=alerts -critical```
+Print Prometheus runtime information.
 
-### Print metadata for metrics exported by kube-state-metrics as a CSV file
+### Targets
 
-```promclient -promurl=<Prometheus URL>|-promip=<Prometheus IP> -command=metrics -job=kube-state-metrics -csv | sort -u```
+```sh
+promclient targets -promurl=<url> [-active|-down] [-job=<job>] [-count] [-verbose]
+```
+
+Print target status. `-down` implies `-active`. `-count` prints the count of matching active targets.
+
+### Alerts
+
+```sh
+promclient alerts -promurl=<url> [-severity=<severity>] [-count]
+```
+
+Print firing alerts, excluding Watchdog. `-count` applies the same filtering as normal alert output.
+
+### Metrics
+
+```sh
+promclient metrics -promurl=<url> [-job=<job>] [-count] [-csv]
+```
+
+Print target metric metadata. `-csv` emits valid CSV with fields:
+
+```text
+job,metric-name,metric-help,metric-type
+```
+
+### Rules
+
+```sh
+promclient rules -promurl=<url> [-rule=<name>|-group=<name>]
+```
+
+Print Prometheus alerting and recording rule status.
+
+### Query
+
+```sh
+promclient query -promurl=<url> -query=<promql> [-len=<duration>] [-step=<duration>] [-timed] [-skip-timestamp=false]
+```
+
+Without `-len`, `query` runs an instant query. With `-len`, it runs a range query ending at the current time. `-step` requires `-len`.
+
+## Examples
+
+Print down `node-exporter` targets:
+
+```sh
+promclient targets -promurl=<url> -job=node-exporter -down
+```
+
+Show critical firing alerts:
+
+```sh
+promclient alerts -promurl=<url> -severity=critical
+```
+
+Print metric metadata for `kube-state-metrics` as CSV:
+
+```sh
+promclient metrics -promurl=<url> -job=kube-state-metrics -csv | sort -u
+```
+
+Run an instant PromQL query:
+
+```sh
+promclient query -promurl=<url> -query='up{job="node-exporter"}'
+```

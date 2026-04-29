@@ -1,16 +1,27 @@
-ARCH?=arm64
-OS?=darwin
-BUILDTIME=$(shell date -u +%Y-%m-%d.%H%M)
-REVISION=$(shell git log --oneline | head -1 | cut -d\  -f 1)
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+GOPATH ?= $(shell go env GOPATH)
+BUILDTIME := $(shell date -u +%Y-%m-%d.%H%M)
+REVISION := $(shell git log --oneline | head -1 | cut -d\  -f 1)
+BINARY := promclient-$(GOOS)-$(GOARCH)
 
-LDFLAGS=-ldflags "-X main.gitRevision=$(REVISION) -X main.buildTime=$(BUILDTIME)"
+LDFLAGS := -ldflags "-X main.gitRevision=$(REVISION) -X main.buildTime=$(BUILDTIME)"
 
-all:
-	CGO_ENABLED=0 GOOS= GOARCH=$(ARCH) go build $(LDFLAGS) -o promclient-$(OS)-$(ARCH) main.go
+.PHONY: all build install check clean
 
-install:
-	install -m 0755 promclient-$(OS)-$(ARCH) $(GOPATH)/bin/promclient
+all: build
+
+build:
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(LDFLAGS) -o $(BINARY) .
+
+install: build
+	install -m 0755 $(BINARY) $(GOPATH)/bin/promclient
 
 check:
-	go vet main.go
-	golint main.go
+	test -z "$$(gofmt -l *.go internal)"
+	go test ./...
+	go vet ./...
+	staticcheck ./...
+
+clean:
+	rm -f promclient-*

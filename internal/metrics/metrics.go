@@ -2,96 +2,108 @@ package metrics
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
-	"os"
-	"strings"
+	"io"
+	"sort"
+	"strconv"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 type MetricArgs struct {
-	Verbose bool
-	// if true, just print a count of the matching metrics found
+	// Count prints only a count of matching metrics.
 	Count bool
-	// if true, print parseable outout ib CSV format
-	Csv bool
-	// only print information on metrics associated with the specified job
+	// CSV prints parseable metric metadata as CSV.
+	CSV bool
+	// Job filters metrics by job label.
 	Job string
 }
 
-func seqSearch(key string, arr []string) bool {
-	for _, val := range arr {
-		if val == key {
-			return true
-		}
-	}
-	return false
-}
-
-//
-// Dump Prometheus' metric metadata
-//
-// If the -csv CLI option was set then output metric metadata in CSV format:
-//
-// <job>,<metric-name>,<metric-help>,<metric-type>
-//
-func Metrics(ctx context.Context, api v1.API, args *MetricArgs) {
-	var jobs []string
-	var count int32
-
-	if args.Job != "" {
-		jobs = append(jobs, args.Job)
-	} else {
-		result, err := api.Targets(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error retrieving list of targets: %v\n", err)
-			os.Exit(1)
-		}
-
-		for _, target := range result.Active {
-			// Don't add if the target is down
-			if target.Health == v1.HealthBad {
-				continue
-			}
-
-			// Don't add if we've already added this job to the array
-			job := string(target.Labels["job"])
-			if seqSearch(job, jobs) {
-				continue
-			}
-
-			jobs = append(jobs, job)
-		}
+// Metrics prints Prometheus metric metadata.
+func Metrics(ctx context.Context, api v1.API, w io.Writer, args *MetricArgs) error {
+	jobs, err := jobs(ctx, api, args.Job)
+	if err != nil {
+		return err
 	}
 
-	for _, j := range jobs {
-		match := fmt.Sprintf("{job=\"%s\"}", j)
-		metrics, err := api.TargetsMetadata(ctx, match, "", "")
+	count := 0
+	var csvWriter *csv.Writer
+	if args.CSV {
+		csvWriter = csv.NewWriter(w)
+	}
+
+	for _, job := range jobs {
+		match := fmt.Sprintf("{job=%s}", strconv.Quote(job))
+		metadata, err := api.TargetsMetadata(ctx, match, "", "")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error retrieving metric metadata for %s: %v\n", j, err)
-			os.Exit(1)
+			return fmt.Errorf("retrieve metric metadata for %s: %w", job, err)
 		}
-		for _, metric := range metrics {
+
+		for _, metric := range metadata {
 			count++
 			if args.Count {
 				continue
 			}
 
-			if args.Csv {
-				// Since we're outputting a CSV file, we need to replace any
-				// comma chars in the help string with something else
-				help := strings.ReplaceAll(metric.Help, ",", ";")
-				fmt.Printf("%s,%s,%s,%s\n", j, metric.Metric, help, metric.Type)
-			} else {
-				fmt.Printf("%-20s %s\n", "Job:", j)
-				fmt.Printf("%-20s %s\n", "Metric Name:", metric.Metric)
-				fmt.Printf("%-20s %s\n", "Metric Help:", metric.Help)
-				fmt.Printf("%-20s %s\n", "Metric Type:", metric.Type)
-				fmt.Printf("\n")
+			if args.CSV {
+				if err := csvWriter.Write([]string{job, metric.Metric, metric.Help, string(metric.Type)}); err != nil {
+					return fmt.Errorf("write CSV row: %w", err)
+				}
+				continue
 			}
+
+			fmt.Fprintf(w, "%-20s %s\n", "Job:", job)
+			fmt.Fprintf(w, "%-20s %s\n", "Metric Name:", metric.Metric)
+			fmt.Fprintf(w, "%-20s %s\n", "Metric Help:", metric.Help)
+			fmt.Fprintf(w, "%-20s %s\n", "Metric Type:", metric.Type)
+			fmt.Fprintln(w)
 		}
 	}
-	if args.Count {
-		fmt.Printf("%d\n", count)
+
+	if args.CSV {
+		csvWriter.Flush()
+		if err := csvWriter.Error(); err != nil {
+			return fmt.Errorf("flush CSV output: %w", err)
+		}
 	}
+
+	if args.Count {
+		_, err := fmt.Fprintf(w, "%d\n", count)
+		return err
+	}
+
+	return nil
+}
+
+func jobs(ctx context.Context, api v1.API, job string) ([]string, error) {
+	if job != "" {
+		return []string{job}, nil
+	}
+
+	result, err := api.Targets(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("retrieve targets: %w", err)
+	}
+
+	seen := make(map[string]struct{})
+	for _, target := range result.Active {
+		if target.Health == v1.HealthBad {
+			continue
+		}
+
+		job := string(target.Labels["job"])
+		if job == "" {
+			continue
+		}
+		seen[job] = struct{}{}
+	}
+
+	jobs := make([]string, 0, len(seen))
+	for job := range seen {
+		jobs = append(jobs, job)
+	}
+	sort.Strings(jobs)
+
+	return jobs, nil
 }

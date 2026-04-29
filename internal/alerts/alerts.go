@@ -3,67 +3,84 @@ package alerts
 import (
 	"context"
 	"fmt"
-	"os"
+	"io"
+	"sort"
 
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 )
 
 type AlertArgs struct {
-	// if set, filter results by severity
-	Severity *string
-	// if true, just print a count of the matching alerts found
+	// Severity filters results by severity when set.
+	Severity string
+	// Count prints only a count of matching alerts.
 	Count bool
 }
 
-type Alert struct {
-	paSeverity string
-	paDescs    []string
+type alertGroup struct {
+	severity     string
+	descriptions []string
 }
 
-//
-// Dump all active alerts
-//
-func Alerts(ctx context.Context, api v1.API, args *AlertArgs) {
+// Alerts prints active Prometheus alerts.
+func Alerts(ctx context.Context, api v1.API, w io.Writer, args *AlertArgs) error {
 	result, err := api.Alerts(ctx)
-	alerts := make(map[string]*Alert)
-
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error retrieving list of alerts: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("retrieve alerts: %w", err)
+	}
+
+	grouped := make(map[string]*alertGroup)
+	count := 0
+	for _, alert := range result.Alerts {
+		if !matchesAlert(alert, args.Severity) {
+			continue
+		}
+
+		count++
+		key := string(alert.Labels["alertname"])
+		entry, ok := grouped[key]
+		if !ok {
+			entry = &alertGroup{severity: string(alert.Labels["severity"])}
+			grouped[key] = entry
+		}
+		entry.descriptions = append(entry.descriptions, string(alert.Annotations["message"]))
 	}
 
 	if args.Count {
-		fmt.Printf("%d\n", len(result.Alerts))
-		return
+		_, err := fmt.Fprintf(w, "%d\n", count)
+		return err
 	}
 
-	fmt.Printf("\n")
-	for _, alert := range result.Alerts {
-		if alert.Labels["alertname"] == "Watchdog" || alert.State != "firing" {
-			continue
-		}
+	if len(grouped) == 0 {
+		return nil
+	}
 
-		if *args.Severity != "" && alert.Labels["severity"] != model.LabelValue(*args.Severity) {
-			continue
-		}
-		key := string(alert.Labels["alertname"])
-		val, ok := alerts[key]
-		if !ok {
-			var newAlert Alert
-			newAlert.paSeverity = string(alert.Labels["severity"])
-			newAlert.paDescs = append(newAlert.paDescs, string(alert.Annotations["message"]))
-			alerts[key] = &newAlert
-		} else {
-			val.paDescs = append(alerts[key].paDescs, string(alert.Annotations["message"]))
-		}
+	fmt.Fprintln(w)
+	names := make([]string, 0, len(grouped))
+	for name := range grouped {
+		names = append(names, name)
 	}
-	for k, v := range alerts {
-		fmt.Printf("alert: %s\n", k)
-		fmt.Printf("severity: %s\n", v.paSeverity)
-		for i := range v.paDescs {
-			fmt.Printf("  %s\n", v.paDescs[i])
+	sort.Strings(names)
+
+	for _, name := range names {
+		alert := grouped[name]
+		fmt.Fprintf(w, "alert: %s\n", name)
+		fmt.Fprintf(w, "severity: %s\n", alert.severity)
+		for _, description := range alert.descriptions {
+			fmt.Fprintf(w, "  %s\n", description)
 		}
-		fmt.Printf("\n")
+		fmt.Fprintln(w)
 	}
+
+	return nil
+}
+
+func matchesAlert(alert v1.Alert, severity string) bool {
+	if alert.Labels["alertname"] == "Watchdog" || alert.State != v1.AlertStateFiring {
+		return false
+	}
+	if severity != "" && alert.Labels["severity"] != model.LabelValue(severity) {
+		return false
+	}
+	return true
 }
