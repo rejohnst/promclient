@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/prometheus/client_golang/api"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 func TestMetricsCountUsesEscapedJobMatcher(t *testing.T) {
@@ -34,9 +33,9 @@ func TestMetricsCountUsesEscapedJobMatcher(t *testing.T) {
 		}`))
 	})
 
-	api := newMetricsTestAPI(t, mux)
-	var out bytes.Buffer
-	err := Metrics(context.Background(), api, &out, &MetricArgs{Count: true, Job: job})
+	client := newMetricsTestClient(t, mux)
+	var out, errOut bytes.Buffer
+	err := Metrics(context.Background(), client, &out, &errOut, &MetricArgs{Count: true, Job: job})
 	if err != nil {
 		t.Fatalf("Metrics returned error: %v", err)
 	}
@@ -67,9 +66,9 @@ func TestMetricsCSVPreservesCommasAndQuotes(t *testing.T) {
 		}`))
 	})
 
-	api := newMetricsTestAPI(t, mux)
-	var out bytes.Buffer
-	err := Metrics(context.Background(), api, &out, &MetricArgs{CSV: true, Job: "node"})
+	client := newMetricsTestClient(t, mux)
+	var out, errOut bytes.Buffer
+	err := Metrics(context.Background(), client, &out, &errOut, &MetricArgs{CSV: true, Job: "node"})
 	if err != nil {
 		t.Fatalf("Metrics returned error: %v", err)
 	}
@@ -81,7 +80,7 @@ func TestMetricsCSVPreservesCommasAndQuotes(t *testing.T) {
 	}
 }
 
-func newMetricsTestAPI(t *testing.T, handler http.Handler) v1.API {
+func newMetricsTestClient(t *testing.T, handler http.Handler) api.Client {
 	t.Helper()
 
 	server := httptest.NewServer(handler)
@@ -91,5 +90,5 @@ func newMetricsTestAPI(t *testing.T, handler http.Handler) v1.API {
 	if err != nil {
 		t.Fatalf("create Prometheus client: %v", err)
 	}
-	return v1.NewAPI(client)
+	return client
 }

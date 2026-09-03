@@ -1,18 +1,19 @@
 package targets
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"sort"
 
+	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/rejohnst/promclient/internal/promapi"
 )
 
 type TargetArgs struct {
 	Verbose bool
-	// Active prints only active targets.
-	Active bool
 	// Down prints only active targets whose state is "down".
 	Down bool
 	// Count prints only a count of matching active targets.
@@ -21,11 +22,22 @@ type TargetArgs struct {
 	Job string
 }
 
-// Targets prints Prometheus target information.
-func Targets(ctx context.Context, api v1.API, w io.Writer, args *TargetArgs) error {
-	result, err := api.Targets(ctx)
+// Targets prints Prometheus target information. Warnings go to stderr so that
+// a partial response is not mistaken for an empty one.
+func Targets(ctx context.Context, client api.Client, stdout, stderr io.Writer, args *TargetArgs) error {
+	buffered := bufio.NewWriter(stdout)
+	err := printTargets(ctx, client, buffered, stderr, args)
+	if flushErr := buffered.Flush(); err == nil {
+		err = flushErr
+	}
+	return err
+}
+
+func printTargets(ctx context.Context, client api.Client, w, stderr io.Writer, args *TargetArgs) error {
+	active, warnings, err := promapi.FetchActiveTargets(ctx, client)
+	promapi.PrintWarnings(stderr, warnings)
 	if err != nil {
-		return fmt.Errorf("retrieve targets: %w", err)
+		return err
 	}
 
 	count := 0
@@ -34,7 +46,7 @@ func Targets(ctx context.Context, api v1.API, w io.Writer, args *TargetArgs) err
 		fmt.Fprintln(w, "==============")
 	}
 
-	for _, target := range result.Active {
+	for _, target := range active {
 		if !matchesActiveTarget(target, args.Job, args.Down) {
 			continue
 		}
@@ -56,7 +68,7 @@ func Targets(ctx context.Context, api v1.API, w io.Writer, args *TargetArgs) err
 		}
 
 		if args.Verbose {
-			printStringMap(w, target.DiscoveredLabels, "%-20s %s\n")
+			printDiscoveredLabels(w, target.DiscoveredLabels)
 		}
 		fmt.Fprintln(w)
 	}
@@ -64,21 +76,6 @@ func Targets(ctx context.Context, api v1.API, w io.Writer, args *TargetArgs) err
 	if args.Count {
 		_, err := fmt.Fprintf(w, "%d\n", count)
 		return err
-	}
-	if args.Active {
-		return nil
-	}
-
-	fmt.Fprintln(w, "Dropped targets:")
-	for _, target := range result.Dropped {
-		if args.Job != "" && args.Job != target.DiscoveredLabels["job"] {
-			continue
-		}
-		fmt.Fprintf(w, "Job: %s\n", target.DiscoveredLabels["job"])
-		if args.Verbose {
-			printStringMap(w, target.DiscoveredLabels, "%s: %s\n")
-		}
-		fmt.Fprintln(w)
 	}
 
 	return nil
@@ -94,14 +91,14 @@ func matchesActiveTarget(target v1.ActiveTarget, job string, downOnly bool) bool
 	return true
 }
 
-func printStringMap(w io.Writer, values map[string]string, format string) {
-	keys := make([]string, 0, len(values))
-	for key := range values {
+func printDiscoveredLabels(w io.Writer, labels map[string]string) {
+	keys := make([]string, 0, len(labels))
+	for key := range labels {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
 
 	for _, key := range keys {
-		fmt.Fprintf(w, format, key, values[key])
+		fmt.Fprintf(w, "%-20s %s\n", key, labels[key])
 	}
 }

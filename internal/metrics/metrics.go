@@ -8,7 +8,9 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/rejohnst/promclient/internal/promapi"
 )
 
 type MetricArgs struct {
@@ -20,9 +22,12 @@ type MetricArgs struct {
 	Job string
 }
 
-// Metrics prints Prometheus metric metadata.
-func Metrics(ctx context.Context, api v1.API, w io.Writer, args *MetricArgs) error {
-	jobs, err := jobs(ctx, api, args.Job)
+// Metrics prints Prometheus metric metadata. Warnings go to stderr so that a
+// partial response is not mistaken for an empty one.
+func Metrics(ctx context.Context, client api.Client, w, stderr io.Writer, args *MetricArgs) error {
+	metadataAPI := v1.NewAPI(client)
+
+	jobs, err := jobs(ctx, client, stderr, args.Job)
 	if err != nil {
 		return err
 	}
@@ -35,7 +40,7 @@ func Metrics(ctx context.Context, api v1.API, w io.Writer, args *MetricArgs) err
 
 	for _, job := range jobs {
 		match := fmt.Sprintf("{job=%s}", strconv.Quote(job))
-		metadata, err := api.TargetsMetadata(ctx, match, "", "")
+		metadata, err := metadataAPI.TargetsMetadata(ctx, match, "", "")
 		if err != nil {
 			return fmt.Errorf("retrieve metric metadata for %s: %w", job, err)
 		}
@@ -76,18 +81,19 @@ func Metrics(ctx context.Context, api v1.API, w io.Writer, args *MetricArgs) err
 	return nil
 }
 
-func jobs(ctx context.Context, api v1.API, job string) ([]string, error) {
+func jobs(ctx context.Context, client api.Client, stderr io.Writer, job string) ([]string, error) {
 	if job != "" {
 		return []string{job}, nil
 	}
 
-	result, err := api.Targets(ctx)
+	active, warnings, err := promapi.FetchActiveTargets(ctx, client)
+	promapi.PrintWarnings(stderr, warnings)
 	if err != nil {
-		return nil, fmt.Errorf("retrieve targets: %w", err)
+		return nil, err
 	}
 
 	seen := make(map[string]struct{})
-	for _, target := range result.Active {
+	for _, target := range active {
 		if target.Health == v1.HealthBad {
 			continue
 		}

@@ -50,10 +50,18 @@ Print Prometheus runtime information.
 ### Targets
 
 ```sh
-promclient targets -promurl=<url> [-active|-down] [-job=<job>] [-count] [-verbose]
+promclient targets -promurl=<url> [-down] [-job=<job>] [-count] [-verbose]
 ```
 
-Print target status. `-down` implies `-active`. `-count` prints the count of matching active targets.
+Print active target status. `-count` prints the count of matching active targets. `-active` is the
+default and is still accepted for compatibility.
+
+Dropped targets are not reported. They are far bulkier than active targets, and requesting them forces
+the server to return every target state, which behind Thanos Query can exceed the 2 GiB gRPC message
+limit and fail the whole request.
+
+Server warnings are printed to stderr. Thanos Query reports a failed store fan-out as an empty result
+plus warnings, so without them an unreachable store looks identical to a server with no targets.
 
 ### Alerts
 
@@ -97,6 +105,12 @@ Print down `node-exporter` targets:
 
 ```sh
 promclient targets -promurl=<url> -job=node-exporter -down
+```
+
+Count active `snmp-exporter` targets:
+
+```sh
+promclient targets -promurl=<url> -job=snmp-exporter -count
 ```
 
 Show critical firing alerts:

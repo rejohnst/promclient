@@ -181,13 +181,13 @@ func runMetrics(args []string, global clientOptions, stdout, stderr io.Writer) e
 		return err
 	}
 
-	api, ctx, cancel, err := newAPI(opts)
+	client, ctx, cancel, err := newClient(opts)
 	if err != nil {
 		return err
 	}
 	defer cancel()
 
-	return metrics.Metrics(ctx, api, stdout, &metricArgs)
+	return metrics.Metrics(ctx, client, stdout, stderr, &metricArgs)
 }
 
 func runQuery(args []string, global clientOptions, stdout, stderr io.Writer) error {
@@ -289,7 +289,7 @@ func runTargets(args []string, global clientOptions, stdout, stderr io.Writer) e
 	var targetArgs targets.TargetArgs
 	fs := newCommandFlagSet("targets", stderr)
 	registerClientFlags(fs, &opts)
-	fs.BoolVar(&targetArgs.Active, "active", false, "only display active targets")
+	fs.Bool("active", false, "only display active targets (default; accepted for compatibility)")
 	fs.BoolVar(&targetArgs.Count, "count", false, "only display a count of matching active targets")
 	fs.BoolVar(&targetArgs.Down, "down", false, "only display active targets that are down")
 	fs.StringVar(&targetArgs.Job, "job", "", "show only targets from the specified job")
@@ -298,17 +298,14 @@ func runTargets(args []string, global clientOptions, stdout, stderr io.Writer) e
 	if err := parseCommandFlags(fs, args); err != nil {
 		return err
 	}
-	if targetArgs.Down {
-		targetArgs.Active = true
-	}
 
-	api, ctx, cancel, err := newAPI(opts)
+	client, ctx, cancel, err := newClient(opts)
 	if err != nil {
 		return err
 	}
 	defer cancel()
 
-	return targets.Targets(ctx, api, stdout, &targetArgs)
+	return targets.Targets(ctx, client, stdout, stderr, &targetArgs)
 }
 
 func newCommandFlagSet(command string, output io.Writer) *flag.FlagSet {
@@ -338,6 +335,14 @@ func parseCommandFlags(fs *flag.FlagSet, args []string) error {
 }
 
 func newAPI(opts clientOptions) (v1.API, context.Context, context.CancelFunc, error) {
+	client, ctx, cancel, err := newClient(opts)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return v1.NewAPI(client), ctx, cancel, nil
+}
+
+func newClient(opts clientOptions) (api.Client, context.Context, context.CancelFunc, error) {
 	address, timeout, err := opts.addressAndTimeout()
 	if err != nil {
 		return nil, nil, nil, err
@@ -375,7 +380,7 @@ func newAPI(opts clientOptions) (v1.API, context.Context, context.CancelFunc, er
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	return v1.NewAPI(client), ctx, cancel, nil
+	return client, ctx, cancel, nil
 }
 
 func (opts clientOptions) addressAndTimeout() (string, time.Duration, error) {
@@ -477,7 +482,7 @@ func printHelp(args []string, stdout io.Writer) error {
 		fs.StringVar(&commandArgs.RuleGroup, "group", "", "Prometheus rule group")
 	case "targets":
 		var commandArgs targets.TargetArgs
-		fs.BoolVar(&commandArgs.Active, "active", false, "only display active targets")
+		fs.Bool("active", false, "only display active targets (default; accepted for compatibility)")
 		fs.BoolVar(&commandArgs.Count, "count", false, "only display a count of matching active targets")
 		fs.BoolVar(&commandArgs.Down, "down", false, "only display active targets that are down")
 		fs.StringVar(&commandArgs.Job, "job", "", "show only targets from the specified job")

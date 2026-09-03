@@ -5,18 +5,19 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/prometheus/client_golang/api"
-	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )
 
 func TestTargetsCountPrintsOnlyCount(t *testing.T) {
-	api := newTargetsTestAPI(t)
-	var out bytes.Buffer
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
 
-	err := Targets(context.Background(), api, &out, &TargetArgs{Count: true, Job: "node"})
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{Count: true, Job: "node"})
 	if err != nil {
 		t.Fatalf("Targets returned error: %v", err)
 	}
@@ -27,10 +28,10 @@ func TestTargetsCountPrintsOnlyCount(t *testing.T) {
 }
 
 func TestTargetsDownCountAppliesFilters(t *testing.T) {
-	api := newTargetsTestAPI(t)
-	var out bytes.Buffer
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
 
-	err := Targets(context.Background(), api, &out, &TargetArgs{
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{
 		Count: true,
 		Down:  true,
 		Job:   "node",
@@ -44,29 +45,156 @@ func TestTargetsDownCountAppliesFilters(t *testing.T) {
 	}
 }
 
-func TestTargetsJobFilterAppliesToDroppedTargets(t *testing.T) {
-	api := newTargetsTestAPI(t)
-	var out bytes.Buffer
+func TestTargetsJobFilterAppliesToActiveTargets(t *testing.T) {
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
 
-	err := Targets(context.Background(), api, &out, &TargetArgs{Job: "node"})
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{Job: "node"})
 	if err != nil {
 		t.Fatalf("Targets returned error: %v", err)
 	}
 
 	got := out.String()
-	if !strings.Contains(got, "Dropped targets:\nJob: node\n") {
-		t.Fatalf("expected matching dropped target, got:\n%s", got)
+	if !strings.Contains(got, "http://node-a:9100/metrics") {
+		t.Fatalf("expected matching active target, got:\n%s", got)
 	}
-	if strings.Contains(got, "Job: api\n") {
-		t.Fatalf("expected dropped target job filter to exclude api, got:\n%s", got)
+	if strings.Contains(got, "api:9000") {
+		t.Fatalf("expected job filter to exclude api, got:\n%s", got)
 	}
 }
 
-func newTargetsTestAPI(t *testing.T) v1.API {
+// Collecting dropped targets can exceed the 2 GiB gRPC message limit behind
+// Thanos Query and fail the whole request, so they are never requested.
+func TestTargetsAlwaysRequestsActiveStateOnly(t *testing.T) {
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
+
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{})
+	if err != nil {
+		t.Fatalf("Targets returned error: %v", err)
+	}
+
+	if got, want := server.lastQuery().Get("state"), "active"; got != want {
+		t.Fatalf("unexpected state parameter: got %q want %q", got, want)
+	}
+}
+
+func TestTargetsOmitsDroppedSection(t *testing.T) {
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
+
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{})
+	if err != nil {
+		t.Fatalf("Targets returned error: %v", err)
+	}
+
+	if got := out.String(); strings.Contains(got, "Dropped targets:") {
+		t.Fatalf("expected no dropped-target section, got:\n%s", got)
+	}
+}
+
+func TestTargetsNeverSendsScrapePool(t *testing.T) {
+	server := newTargetsTestServer(t)
+	var out, errOut bytes.Buffer
+
+	err := Targets(context.Background(), server.client, &out, &errOut, &TargetArgs{Job: "node"})
+	if err != nil {
+		t.Fatalf("Targets returned error: %v", err)
+	}
+
+	// A scrape pool is named after its scrape config's job_name, which under
+	// prometheus-operator never matches the job label.
+	if got, ok := server.lastQuery()["scrapePool"]; ok {
+		t.Fatalf("expected no scrapePool parameter, got %q", got)
+	}
+}
+
+// Thanos Query reports a failed store fan-out as an empty result plus
+// warnings, which is otherwise indistinguishable from having no targets.
+func TestTargetsReportsWarningsOnStderr(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/targets", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"status": "success",
+			"warnings": ["receiving targets from targets client: rpc error: code = ResourceExhausted"],
+			"data": {"activeTargets": [], "droppedTargets": []}
+		}`))
+	})
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	client, err := api.NewClient(api.Config{Address: server.URL})
+	if err != nil {
+		t.Fatalf("create Prometheus client: %v", err)
+	}
+
+	var out, errOut bytes.Buffer
+	if err := Targets(context.Background(), client, &out, &errOut, &TargetArgs{Count: true}); err != nil {
+		t.Fatalf("Targets returned error: %v", err)
+	}
+
+	if got, want := out.String(), "0\n"; got != want {
+		t.Fatalf("unexpected count output: got %q want %q", got, want)
+	}
+	if got := errOut.String(); !strings.Contains(got, "ResourceExhausted") {
+		t.Fatalf("expected warning on stderr, got %q", got)
+	}
+}
+
+func TestTargetsReportsAPIError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/targets", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = w.Write([]byte(`{"status":"error","errorType":"bad_data","error":"invalid parameter"}`))
+	})
+
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+
+	client, err := api.NewClient(api.Config{Address: server.URL})
+	if err != nil {
+		t.Fatalf("create Prometheus client: %v", err)
+	}
+
+	var out, errOut bytes.Buffer
+	err = Targets(context.Background(), client, &out, &errOut, &TargetArgs{})
+	if err == nil {
+		t.Fatal("expected Targets to return an error")
+	}
+	if got := err.Error(); !strings.Contains(got, "invalid parameter") {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+// targetsTestServer serves a fixed targets payload and records the query
+// parameters of the most recent request.
+type targetsTestServer struct {
+	client api.Client
+
+	mu    sync.Mutex
+	query url.Values
+}
+
+func (s *targetsTestServer) lastQuery() url.Values {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.query
+}
+
+func newTargetsTestServer(t *testing.T) *targetsTestServer {
 	t.Helper()
+
+	testServer := &targetsTestServer{}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/targets", func(w http.ResponseWriter, r *http.Request) {
+		testServer.mu.Lock()
+		testServer.query = r.URL.Query()
+		testServer.mu.Unlock()
+
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"status": "success",
@@ -121,5 +249,7 @@ func newTargetsTestAPI(t *testing.T) v1.API {
 	if err != nil {
 		t.Fatalf("create Prometheus client: %v", err)
 	}
-	return v1.NewAPI(client)
+	testServer.client = client
+
+	return testServer
 }
